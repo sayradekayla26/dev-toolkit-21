@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-dev-toolkit-21 is a Python toolkit that provides practical command-line utilities for everyday development tasks. It helps developers initialize projects, manage environments, and handle common maintenance work with minimal setup.
+dev-toolkit-21 is a Python toolkit that provides practical command-line utilities for daily development work. It focuses on reducing repetitive setup tasks and helping maintain consistent project standards across Python codebases.
 
 ## Features
 
-- Scaffold new Python projects with standard directory structures and configuration files
-- Create and validate virtual environments with automatic requirements checking
-- Scan dependencies for outdated packages and known security vulnerabilities
-- Generate boilerplate for tests, CLI entry points, and configuration files
+- Scaffold new projects with a clean layout, pytest, ruff, and pre-commit configuration
+- Run combined code quality checks including linting, type checking, and security scanning
+- Audit dependencies and generate update suggestions while respecting existing constraints
+- Create and manage isolated virtual environments with common development tools pre-installed
 
 ## Installation
 
@@ -17,10 +17,10 @@ dev-toolkit-21 is a Python toolkit that provides practical command-line utilitie
 pip install dev-toolkit-21
 ```
 
-Install from source:
+To install from source:
 
 ```bash
-git clone https://github.com/developer/dev-toolkit-21.git
+git clone https://github.com/Developer/dev-toolkit-21.git
 cd dev-toolkit-21
 pip install -e .
 ```
@@ -30,17 +30,16 @@ pip install -e .
 Initialize a new project:
 
 ```bash
-dev-toolkit init my-project --type cli
+dev-toolkit init my-project
+cd my-project
 ```
 
-Audit dependencies:
+Run quality checks on the current project:
 
 ```bash
-dev-toolkit audit
+dev-toolkit check
 ```
 
-View all available commands:
+## License
 
-```bash
-dev-toolkit --help
-```
+MIT License
