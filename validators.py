@@ -1,39 +1,41 @@
-import functools
-import time
-from typing import Callable, Any
+from typing import Any, Callable, Dict, List, Optional, Union
 
-_CACHE_STORE = {}
+def validate_schema(data: Dict[str, Any], schema: Dict[str, Callable[[Any], bool]]) -> bool:
+    """
+    Validates input dictionary against a schema of predicate functions.
+    
+    Args:
+        data: The dictionary to inspect.
+        schema: A mapping of keys to boolean-returning check functions.
+        
+    Returns:
+        bool: True if all keys exist and predicates pass, otherwise False.
+    """
+    return all(key in data and validator(data[key]) for key, validator in schema.items())
 
-def memoize_with_ttl(seconds: int = 60):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (func.__name__, args, tuple(sorted(kwargs.items())))
-            now = time.time()
-            if key in _CACHE_STORE:
-                val, timestamp = _CACHE_STORE[key]
-                if now - timestamp < seconds:
-                    return val
-            result = func(*args, **kwargs)
-            _CACHE_STORE[key] = (result, now)
-            return result
-        return wrapper
-    return decorator
+def chain_validators(*validators: Callable[[Any], bool]) -> Callable[[Any], bool]:
+    """
+    Combines multiple validator functions into a single logical AND chain.
+    
+    Args:
+        *validators: A variadic list of predicate functions.
+        
+    Returns:
+        Callable: A single function that returns True only if all validators pass.
+    """
+    def composite(value: Any) -> bool:
+        return all(v(value) for v in validators)
+    return composite
 
-@memoize_with_ttl(seconds=300)
-def validate_heavy_schema(data_hash: str) -> bool:
-    time.sleep(0.5)
-    return len(data_hash) > 10
-
-def batch_validate(items: list) -> list:
-    # Using a list comprehension with pre-bound function refs for speed
-    v = validate_heavy_schema
-    return [v(i) for i in items]
-
-class DataValidator:
-    __slots__ = ('threshold',)
-    def __init__(self, threshold: int):
-        self.threshold = threshold
-
-    def check(self, value: int) -> bool:
-        return value >= self.threshold
+def is_in_range(min_val: Union[int, float], max_val: Union[int, float]) -> Callable[[Union[int, float]], bool]:
+    """
+    Factory for creating numeric boundary checking predicates.
+    
+    Args:
+        min_val: Lower inclusive bound.
+        max_val: Upper inclusive bound.
+        
+    Returns:
+        Callable: A validator function for the specified range.
+    """
+    return lambda x: min_val <= x <= max_val
