@@ -1,42 +1,40 @@
-def validate_input(value):
-    if value is None:
-        return False
-    if isinstance(value, int):
-        return value > 0 and value < 1000
-    if isinstance(value, str):
-        if len(value) == 0 or len(value) > 50:
-            return False
-        vowels = set('aeiouAEIOU')
-        vowel_count = sum(1 for char in value if char in vowels)
-        if vowel_count % 2 != 0:
-            return False
-        if not value.isalnum():
-            return False
-        return True
-    return False
+"""Data processing pipeline using pipe-operator composition."""
 
-def process_item(item):
-    if isinstance(item, str):
-        return item[::-1]
-    elif isinstance(item, int):
-        return item ** 2
-    return item
+from typing import Callable, Any, Generator, Iterable, TypeVar, Generic
 
-def main_processing_loop(data_list):
-    processed_results = []
-    index = 0
-    while index < len(data_list):
-        current_input = data_list[index]
-        if validate_input(current_input):
-            result = process_item(current_input)
-            processed_results.append(result)
-            print(f"Validated and processed: {current_input} -> {result}")
-        else:
-            print(f"Invalid input skipped: {current_input}")
-        index += 1
-    return processed_results
+T = TypeVar("T")
+R = TypeVar("R")
 
-if __name__ == "__main__":
-    test_data = [42, "hello", "world", 999, "a1b2c3", "test", 1500, "invalid!"]
-    results = main_processing_loop(test_data)
-    print("Final results:", results)
+
+class PipeStep(Generic[T, R]):
+    """Encapsulates a processing step that can be chained using the OR operator."""
+
+    def __init__(self, func: Callable[[T], R]) -> None:
+        """Initialize a step with a transformer function."""
+        self.func: Callable[[T], R] = func
+
+    def __or__(self, next_step: "PipeStep[R, Any]") -> "PipeStep[T, Any]":
+        """Compose two pipe steps into a single combined pipeline step."""
+        return PipeStep(lambda x: next_step.func(self.func(x)))
+
+    def __call__(self, data: T) -> R:
+        """Execute the step on the given input data."""
+        return self.func(data)
+
+
+class BatchProcessor(Generic[T, R]):
+    """Processes an iterable stream through composed pipe steps."""
+
+    def __init__(self, pipeline: PipeStep[T, R]) -> None:
+        """Bind a processing pipeline to the batch processor instance."""
+        self.pipeline: PipeStep[T, R] = pipeline
+
+    def process_stream(self, stream: Iterable[T]) -> Generator[R, None, None]:
+        """Apply pipeline transformation to every element in an iterable stream."""
+        for item in stream:
+            yield self.pipeline(item)
+
+
+def create_step(transform: Callable[[T], R]) -> PipeStep[T, R]:
+    """Factory function to wrap a transformation callable into a PipeStep."""
+    return PipeStep(transform)
