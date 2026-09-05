@@ -1,60 +1,62 @@
-from collections.abc import Mapping, Sequence
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Dict, List, Union
 
+class Labyrinth:
+    """A fluent structural zipper for deep dictionary and list navigation.
 
-class DataPipe:
-    """A flexible node transformer for nested data structures with path querying."""
+    Provides robust out-of-bounds safety, targeted morphing, and path exploration.
+    """
+    def __init__(self, data: Any, path: List[Union[str, int]] = None):
+        self.root = data
+        self.path = path or []
 
-    def __init__(self, data: Any):
-        self._data = data
-
-    def extract(self, path: str, default: Any = None) -> Any:
-        """Extract nested key using dot notation, supporting list index wildcards."""
-        keys = path.split(".")
-        current = self._data
-
-        for idx, key in enumerate(keys):
-            if isinstance(current, Mapping) and key in current:
-                current = current[key]
-            elif isinstance(current, Sequence) and not isinstance(current, (str, bytes)):
-                if key == "*":
-                    remaining = ".".join(keys[idx + 1:])
-                    return [DataPipe(item).extract(remaining, default) for item in current]
-                if key.isdigit() and int(key) < len(current):
-                    current = current[int(key)]
-                else:
-                    return default
-            else:
-                return default
+    @property
+    def focus(self) -> Any:
+        """Resolves the current structural node focused by the navigation path."""
+        current = self.root
+        for step in self.path:
+            try:
+                current = current[step]
+            except (KeyError, IndexError, TypeError):
+                return None
         return current
 
-    def reshape(self, template: dict[str, str | Callable[[Any], Any]]) -> dict[str, Any]:
-        """Reshape data according to a template mapping target keys to paths or lambdas."""
-        result = {}
-        for target_key, source in template.items():
-            if callable(source):
-                result[target_key] = source(self._data)
-            elif isinstance(source, str):
-                result[target_key] = self.extract(source)
-            else:
-                result[target_key] = source
-        return result
+    def down(self, step: Union[str, int]) -> "Labyrinth":
+        """Traverse one step deeper into the tree structure."""
+        return Labyrinth(self.root, self.path + [step])
 
-    def stream_nodes(self) -> Generator[tuple[str, Any], None, None]:
-        """Yield all leaf nodes as path-value tuples."""
-        def _walk(obj: Any, prefix: str) -> Generator[tuple[str, Any], None, None]:
-            if isinstance(obj, Mapping):
-                for k, v in obj.items():
-                    yield from _walk(v, f"{prefix}.{k}" if prefix else str(k))
-            elif isinstance(obj, Sequence) and not isinstance(obj, (str, bytes)):
-                for i, item in enumerate(obj):
-                    yield from _walk(item, f"{prefix}.{i}")
-            else:
-                yield prefix, obj
+    def scan(self, target_key: str) -> List["Labyrinth"]:
+        """Performs a deep scan of the node structure to locate matches."""
+        results = []
 
-        yield from _walk(self._data, "")
+        def _traverse(node: Any, current_path: List[Union[str, int]]):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    next_path = current_path + [k]
+                    if k == target_key:
+                        results.append(Labyrinth(self.root, next_path))
+                    _traverse(v, next_path)
+            elif isinstance(node, list):
+                for idx, item in enumerate(node):
+                    _traverse(item, current_path + [idx])
 
+        _traverse(self.focus, self.path)
+        return results
 
-def morph_structure(data: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
-    """Utility wrapper for quick structural morphing of nested data."""
-    return DataPipe(data).reshape(schema)
+    def resolve(self, fallback: Any = None) -> Any:
+        """Resolves the value at the current focus with a fallback threshold."""
+        val = self.focus
+        return fallback if val is None else val
+
+    def morph(self, transformer: Callable[[Any], Any]) -> None:
+        """Applies an in-place transformation function at the targeted focus."""
+        if not self.path:
+            raise ValueError("Cannot morph direct root reference")
+
+        parent_path = self.path[:-1]
+        target_key = self.path[-1]
+
+        parent = self.root
+        for step in parent_path:
+            parent = parent[step]
+
+        parent[target_key] = transformer(parent[target_key])
