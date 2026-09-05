@@ -1,40 +1,38 @@
-"""Data processing pipeline using pipe-operator composition."""
+import time
+import functools
+import random
 
-from typing import Callable, Any, Generator, Iterable, TypeVar, Generic
+def retry_with_backoff(max_retries=3, base_delay=1.0):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            retries = 0
+            while retries <= max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if retries == max_retries:
+                        raise e
+                    sleep_time = (base_delay * (2 ** retries)) + (random.random() * 0.1)
+                    time.sleep(sleep_time)
+                    retries += 1
+        return wrapper
+    return decorator
 
-T = TypeVar("T")
-R = TypeVar("R")
+class NetworkHandler:
+    @retry_with_backoff(max_retries=3)
+    def fetch_data(self, url):
+        # Simulation of unstable network
+        if random.random() < 0.7:
+            raise ConnectionError("Transient network failure")
+        return {"status": 200, "payload": "success"}
 
-
-class PipeStep(Generic[T, R]):
-    """Encapsulates a processing step that can be chained using the OR operator."""
-
-    def __init__(self, func: Callable[[T], R]) -> None:
-        """Initialize a step with a transformer function."""
-        self.func: Callable[[T], R] = func
-
-    def __or__(self, next_step: "PipeStep[R, Any]") -> "PipeStep[T, Any]":
-        """Compose two pipe steps into a single combined pipeline step."""
-        return PipeStep(lambda x: next_step.func(self.func(x)))
-
-    def __call__(self, data: T) -> R:
-        """Execute the step on the given input data."""
-        return self.func(data)
-
-
-class BatchProcessor(Generic[T, R]):
-    """Processes an iterable stream through composed pipe steps."""
-
-    def __init__(self, pipeline: PipeStep[T, R]) -> None:
-        """Bind a processing pipeline to the batch processor instance."""
-        self.pipeline: PipeStep[T, R] = pipeline
-
-    def process_stream(self, stream: Iterable[T]) -> Generator[R, None, None]:
-        """Apply pipeline transformation to every element in an iterable stream."""
-        for item in stream:
-            yield self.pipeline(item)
-
-
-def create_step(transform: Callable[[T], R]) -> PipeStep[T, R]:
-    """Factory function to wrap a transformation callable into a PipeStep."""
-    return PipeStep(transform)
+def process_stream(data_source):
+    handler = NetworkHandler()
+    results = []
+    for item in data_source:
+        try:
+            results.append(handler.fetch_data(item))
+        except ConnectionError:
+            results.append(None)
+    return results
