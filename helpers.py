@@ -1,53 +1,39 @@
-import json
-from collections import deque
-from typing import Any, Dict
-def handle_data(data: Any) -> Dict[str, Any]:
-    if data is None:
-        return {"value": None}
-    if not isinstance(data, (dict, list)):
-        return {"value": data}
-    result = {}
-    queue = deque([(data, "")])
-    safety_counter = 0
-    max_items = 1000
-    while queue:
-        current, path = queue.popleft()
-        if isinstance(current, dict):
-            for key, value in current.items():
-                new_path = f"{path}.{key}" if path else key
-                if isinstance(value, (dict, list)) and safety_counter < max_items:
-                    queue.append((value, new_path))
-                else:
-                    result[new_path] = value
-        elif isinstance(current, list):
-            for idx, item in enumerate(current):
-                new_path = f"{path}.{idx}" if path else str(idx)
-                if isinstance(item, (dict, list)) and safety_counter < max_items:
-                    queue.append((item, new_path))
-                else:
-                    result[new_path] = item
-        else:
-            result[path] = current
-        safety_counter += 1
-        if safety_counter > max_items:
-            result["__safety_limit_reached__"] = True
-            break
-    return result
-def combine_data(*data_dicts: Dict[str, Any]) -> Dict[str, Any]:
-    combined = {}
-    for d in data_dicts:
-        for k, v in d.items():
-            if k in combined:
-                if not isinstance(combined[k], list):
-                    combined[k] = [combined[k]]
-                combined[k].append(v)
+from typing import Any, Callable, Generic, TypeVar, Union
+
+T = TypeVar("T")
+R = TypeVar("R")
+
+class Pipeline(Generic[T]):
+    """A monadic-ish wrapper to chain operations via the shift operator.
+
+    Allows sequential application of callables using '>>' syntactical sugar.
+    """
+
+    def __init__(self, value: T) -> None:
+        self.value: T = value
+
+    def __rshift__(self, func: Callable[[T], R]) -> "Pipeline[R]":
+        """Applies func to the internal value, wrapping the result in Pipeline."""
+        return Pipeline(func(self.value))
+
+    def __repr__(self) -> str:
+        return f"Pipeline({self.value!r})"
+
+
+def safe_lookup(source: Union[dict, list], path: str, fallback: Any = None) -> Any:
+    """Query deeply nested structures using a dotted path string.
+
+    Supports dict keys and list indices (if the path segment is numeric).
+    """
+    current: Any = source
+    for step in path.split("."):
+        try:
+            if isinstance(current, dict):
+                current = current[step]
+            elif isinstance(current, list) and step.isdigit():
+                current = current[int(step)]
             else:
-                combined[k] = v
-    return combined
-def get_data_summary(data: Dict[str, Any]) -> Dict[str, Any]:
-    summary = {
-        "total_keys": len(data),
-        "sample_keys": list(data.keys())[:5],
-        "has_truncation": "__safety_limit_reached__" in data
-    }
-    return summary
+                return fallback
+        except (KeyError, IndexError, TypeError):
+            return fallback
+    return current
