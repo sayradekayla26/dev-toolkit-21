@@ -1,45 +1,50 @@
 # dev-toolkit-21
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-dev-toolkit-21 is a Python toolkit that provides practical command-line utilities for daily development work. It focuses on reducing repetitive setup tasks and helping maintain consistent project standards across Python codebases.
+`dev-toolkit-21` is a robust Python utility suite designed to streamline everyday development workflows and automate repetitive CLI tasks. It provides a modular foundation for file management, system diagnostics, and environment configuration across cross-platform projects.
 
 ## Features
 
-- Scaffold new projects with a clean layout, pytest, ruff, and pre-commit configuration
-- Run combined code quality checks including linting, type checking, and security scanning
-- Audit dependencies and generate update suggestions while respecting existing constraints
-- Create and manage isolated virtual environments with common development tools pre-installed
+*   **Project Scaffolder:** Rapidly generate standardized directory structures and boilerplate configuration files for new Python projects.
+*   **System Diagnostics:** Quickly analyze environment variables, installed dependencies, and system path integrity to debug common configuration drift.
+*   **File Streamliner:** Automated batch renaming and cleanup utilities for clearing build artifacts or temporary cache directories.
+*   **Environment Sync:** Securely sync local `.env` templates across distributed team members without exposing sensitive credentials.
 
 ## Installation
 
-```bash
-pip install dev-toolkit-21
-```
-
-To install from source:
+Ensure you have Python 3.9+ installed. You can install the toolkit via pip:
 
 ```bash
+# Clone the repository
 git clone https://github.com/Developer/dev-toolkit-21.git
 cd dev-toolkit-21
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install the package in editable mode
 pip install -e .
 ```
 
 ## Usage
 
-Initialize a new project:
+Once installed, you can access the toolkit directly from your terminal. 
+
+**Quick Scaffolding:**
+Generate a new project structure in your current directory:
 
 ```bash
-dev-toolkit init my-project
-cd my-project
+dev-toolkit scaffold --name my-new-project --template basic
 ```
 
-Run quality checks on the current project:
+**System Diagnostic Check:**
+Run a health check on your current environment:
 
 ```bash
-dev-toolkit check
+dev-toolkit diagnose --verbose
 ```
 
 ## License
 
-MIT License
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Distributed under the MIT License. See `LICENSE` for more information.
