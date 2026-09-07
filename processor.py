@@ -1,39 +1,39 @@
 import functools
-import logging
-from typing import Callable, Any
+import re
+from typing import Any, Callable, Dict, List, Sequence
 
-class ResilienceError(Exception):
-    pass
+class DataPipe:
+    """A streamlined function chain for modular data processing."""
 
-def robust_execution(func: Callable):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        attempts = 0
-        while attempts < 3:
-            try:
-                return func(*args, **kwargs)
-            except (ValueError, TypeError) as e:
-                logging.error(f'Critical type mismatch: {e}')
-                return None
-            except Exception as e:
-                attempts += 1
-                if attempts >= 3:
-                    raise ResilienceError(f'Failed after 3 attempts: {e}')
-    return wrapper
+    def __init__(self, *transforms: Callable[[Any], Any]):
+        self._transforms: List[Callable[[Any], Any]] = list(transforms)
 
-class DataProcessor:
-    def __init__(self, multiplier: int):
-        self.multiplier = multiplier
+    def __rshift__(self, next_transform: Callable[[Any], Any]) -> "DataPipe":
+        """Reorganize pipeline steps using the bitwise right-shift operator (>>)."""
+        return DataPipe(*self._transforms, next_transform)
 
-    @robust_execution
-    def process(self, value: Any) -> float:
-        if not isinstance(value, (int, float)):
-            raise ValueError('Input must be numeric')
-        if value < 0:
-            raise ResilienceError('Negative input prohibited')
-        return float(value * self.multiplier)
+    def __call__(self, payload: Any) -> Any:
+        return functools.reduce(lambda acc, fn: fn(acc), self._transforms, payload)
 
-if __name__ == '__main__':
-    proc = DataProcessor(2)
-    print(proc.process(10))
-    print(proc.process('invalid'))
+    def execute_batch(self, items: Sequence[Any]) -> List[Any]:
+        return [self(item) for item in items]
+
+
+def normalize_whitespace(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text)).strip()
+
+
+def strip_special_chars(text: str) -> str:
+    return re.sub(r"[^\w\s]", "", text)
+
+
+def structurize(data: str) -> Dict[str, Any]:
+    words = data.split()
+    return {
+        "raw": data,
+        "word_count": len(words),
+        "checksum": sum(ord(c) for c in data) % 10000,
+    }
+
+
+clean_pipeline = DataPipe(normalize_whitespace) >> strip_special_chars >> structurize
