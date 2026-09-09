@@ -1,62 +1,36 @@
 from typing import Any, Callable, Dict, List, Union
+from functools import reduce
+import operator
 
-class Labyrinth:
-    """A fluent structural zipper for deep dictionary and list navigation.
+class DataFlow:
+    def __init__(self, data: Any):
+        self._data = data
 
-    Provides robust out-of-bounds safety, targeted morphing, and path exploration.
-    """
-    def __init__(self, data: Any, path: List[Union[str, int]] = None):
-        self.root = data
-        self.path = path or []
+    def __getitem__(self, key: str) -> 'DataFlow':
+        try:
+            return DataFlow(self._data[key])
+        except (KeyError, TypeError, IndexError):
+            return DataFlow(None)
 
-    @property
-    def focus(self) -> Any:
-        """Resolves the current structural node focused by the navigation path."""
-        current = self.root
-        for step in self.path:
-            try:
-                current = current[step]
-            except (KeyError, IndexError, TypeError):
-                return None
-        return current
+    def get(self) -> Any:
+        return self._data
 
-    def down(self, step: Union[str, int]) -> "Labyrinth":
-        """Traverse one step deeper into the tree structure."""
-        return Labyrinth(self.root, self.path + [step])
+    def apply(self, func: Callable[[Any], Any]) -> 'DataFlow':
+        return DataFlow(func(self._data)) if self._data is not None else self
 
-    def scan(self, target_key: str) -> List["Labyrinth"]:
-        """Performs a deep scan of the node structure to locate matches."""
-        results = []
+def deep_reach(data: Dict, path: str, delimiter: str = '.') -> Any:
+    """Extract nested value using dot-notation or custom delimiter."""
+    keys = path.split(delimiter)
+    return reduce(lambda d, k: d.get(k) if isinstance(d, dict) else None, keys, data)
 
-        def _traverse(node: Any, current_path: List[Union[str, int]]):
-            if isinstance(node, dict):
-                for k, v in node.items():
-                    next_path = current_path + [k]
-                    if k == target_key:
-                        results.append(Labyrinth(self.root, next_path))
-                    _traverse(v, next_path)
-            elif isinstance(node, list):
-                for idx, item in enumerate(node):
-                    _traverse(item, current_path + [idx])
+def sanitize_stream(stream: List[Dict], keys: List[str]) -> List[Dict]:
+    """Filtering of data dictionaries against provided keys."""
+    return [{k: v for k, v in item.items() if k in keys} for item in stream]
 
-        _traverse(self.focus, self.path)
-        return results
-
-    def resolve(self, fallback: Any = None) -> Any:
-        """Resolves the value at the current focus with a fallback threshold."""
-        val = self.focus
-        return fallback if val is None else val
-
-    def morph(self, transformer: Callable[[Any], Any]) -> None:
-        """Applies an in-place transformation function at the targeted focus."""
-        if not self.path:
-            raise ValueError("Cannot morph direct root reference")
-
-        parent_path = self.path[:-1]
-        target_key = self.path[-1]
-
-        parent = self.root
-        for step in parent_path:
-            parent = parent[step]
-
-        parent[target_key] = transformer(parent[target_key])
+def recursive_map(data: Any, transformer: Callable[[Any], Any]) -> Any:
+    """Recursive tree transformation using custom function."""
+    if isinstance(data, dict):
+        return {k: recursive_map(v, transformer) for k, v in data.items()}
+    if isinstance(data, list):
+        return [recursive_map(i, transformer) for i in data]
+    return transformer(data)
