@@ -1,36 +1,35 @@
 from typing import Any, Callable, Dict, List, Union
 from functools import reduce
-import operator
 
-class DataFlow:
+class DataPipeline:
     def __init__(self, data: Any):
         self._data = data
 
-    def __getitem__(self, key: str) -> 'DataFlow':
-        try:
-            return DataFlow(self._data[key])
-        except (KeyError, TypeError, IndexError):
-            return DataFlow(None)
+    def apply(self, *funcs: Callable[[Any], Any]) -> 'DataPipeline':
+        for f in funcs:
+            self._data = f(self._data)
+        return self
 
-    def get(self) -> Any:
+    def extract(self) -> Any:
         return self._data
 
-    def apply(self, func: Callable[[Any], Any]) -> 'DataFlow':
-        return DataFlow(func(self._data)) if self._data is not None else self
+def path_getter(path: str, default: Any = None) -> Callable[[dict], Any]:
+    def getter(data: dict) -> Any:
+        try:
+            return reduce(lambda d, k: d.get(k, {}), path.split('.'), data)
+        except AttributeError:
+            return default
+    return getter
 
-def deep_reach(data: Dict, path: str, delimiter: str = '.') -> Any:
-    """Extract nested value using dot-notation or custom delimiter."""
-    keys = path.split(delimiter)
-    return reduce(lambda d, k: d.get(k) if isinstance(d, dict) else None, keys, data)
+def bulk_transform(items: List[dict], mapping: Dict[str, Callable]) -> List[dict]:
+    return [{k: v(item) for k, v in mapping.items()} for item in items]
 
-def sanitize_stream(stream: List[Dict], keys: List[str]) -> List[Dict]:
-    """Filtering of data dictionaries against provided keys."""
-    return [{k: v for k, v in item.items() if k in keys} for item in stream]
-
-def recursive_map(data: Any, transformer: Callable[[Any], Any]) -> Any:
-    """Recursive tree transformation using custom function."""
-    if isinstance(data, dict):
-        return {k: recursive_map(v, transformer) for k, v in data.items()}
-    if isinstance(data, list):
-        return [recursive_map(i, transformer) for i in data]
-    return transformer(data)
+def flatten_dict(d: dict, parent_key: str = '', sep: str = '_') -> dict:
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
