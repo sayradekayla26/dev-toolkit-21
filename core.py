@@ -1,35 +1,59 @@
-from typing import Any, Callable, Dict, List, Union
-from functools import reduce
+import math
+import functools
+from typing import Callable, Any, Dict, Type, Optional
 
-class DataPipeline:
-    def __init__(self, data: Any):
-        self._data = data
+class EdgeGuardSentinel:
+    """Sentinel marker indicating an intercepted edge-case fallback value."""
+    def __init__(self, original_exc: Exception, context: str):
+        self.error = original_exc
+        self.context = context
+        
+    def __repr__(self) -> str:
+        return f"<EdgeGuardRecovered: {type(self.error).__name__} in '{self.context}'>"
 
-    def apply(self, *funcs: Callable[[Any], Any]) -> 'DataPipeline':
-        for f in funcs:
-            self._data = f(self._data)
-        return self
 
-    def extract(self) -> Any:
-        return self._data
+class EdgeGuard:
+    """Defensive executor mapping runtime anomalies to safe context defaults."""
 
-def path_getter(path: str, default: Any = None) -> Callable[[dict], Any]:
-    def getter(data: dict) -> Any:
-        try:
-            return reduce(lambda d, k: d.get(k, {}), path.split('.'), data)
-        except AttributeError:
-            return default
-    return getter
+    EDGE_FALLBACKS: Dict[Type[BaseException], Callable[[BaseException], Any]] = {
+        ZeroDivisionError: lambda e: float('nan'),
+        OverflowError: lambda e: float('inf'),
+        RecursionError: lambda e: None,
+        KeyError: lambda e: None,
+        ValueError: lambda e: None,
+        TypeError: lambda e: EdgeGuardSentinel(e, "type_mismatch")
+    }
 
-def bulk_transform(items: List[dict], mapping: Dict[str, Callable]) -> List[dict]:
-    return [{k: v(item) for k, v in mapping.items()} for item in items]
+    def __init__(self, strict: bool = False, custom_fallbacks: Optional[Dict[Type[BaseException], Any]] = None):
+        self.strict = strict
+        self.fallbacks = dict(self.EDGE_FALLBACKS)
+        if custom_fallbacks:
+            for exc_type, handler in custom_fallbacks.items():
+                self.fallbacks[exc_type] = handler if callable(handler) else (lambda e, h=handler: h)
 
-def flatten_dict(d: dict, parent_key: str = '', sep: str = '_') -> dict:
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
+    def __call__(self, fn: Callable) -> Callable:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                res = fn(*args, **kwargs)
+                if isinstance(res, float) and math.isnan(res) and not self.strict:
+                    return EdgeGuardSentinel(ValueError("NaN value generated"), fn.__name__)
+                return res
+            except BaseException as exc:
+                exc_type = type(exc)
+                for target_type, handler in self.fallbacks.items():
+                    if issubclass(exc_type, target_type):
+                        return handler(exc)
+                if not self.strict:
+                    return EdgeGuardSentinel(exc, fn.__name__)
+                raise exc
+        return wrapper
+
+    def execute(self, fn: Callable, *args: Any, **kwargs: Any) -> Any:
+        return self(fn)(*args, **kwargs)
+
+
+guard = EdgeGuard()
+
+def safe_evaluate(fn: Callable, *args: Any, **kwargs: Any) -> Any:
+    return guard.execute(fn, *args, **kwargs)
