@@ -1,39 +1,54 @@
-import functools
-import re
-from typing import Any, Callable, Dict, List, Sequence
+import time
+import random
+from typing import Iterator, Type, Tuple, Union
 
-class DataPipe:
-    """A streamlined function chain for modular data processing."""
+class Attempt:
+    def __init__(self, retrier: "RetryLoop"):
+        self.retrier = retrier
 
-    def __init__(self, *transforms: Callable[[Any], Any]):
-        self._transforms: List[Callable[[Any], Any]] = list(transforms)
+    def __enter__(self):
+        return self
 
-    def __rshift__(self, next_transform: Callable[[Any], Any]) -> "DataPipe":
-        """Reorganize pipeline steps using the bitwise right-shift operator (>>)."""
-        return DataPipe(*self._transforms, next_transform)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self.retrier.stop()
+            return True
+        if issubclass(exc_type, self.retrier.exceptions):
+            self.retrier.handle_failure(exc_val)
+            return True
+        return False
 
-    def __call__(self, payload: Any) -> Any:
-        return functools.reduce(lambda acc, fn: fn(acc), self._transforms, payload)
+class RetryLoop:
+    def __init__(
+        self,
+        max_attempts: int = 3,
+        delay: float = 0.1,
+        backoff: float = 2.0,
+        exceptions: Union[Type[Exception], Tuple[Type[Exception], ...]] = Exception,
+    ):
+        self.max_attempts = max_attempts
+        self.delay = delay
+        self.backoff = backoff
+        self.exceptions = exceptions
+        self._current_attempt = 0
+        self._running = True
 
-    def execute_batch(self, items: Sequence[Any]) -> List[Any]:
-        return [self(item) for item in items]
+    def __iter__(self) -> Iterator[Attempt]:
+        self._current_attempt = 0
+        self._running = True
+        while self._current_attempt < self.max_attempts and self._running:
+            self._current_attempt += 1
+            yield Attempt(self)
+            if not self._running:
+                break
+            if self._current_attempt < self.max_attempts:
+                sleep_time = self.delay * (self.backoff ** (self._current_attempt - 1))
+                sleep_time += random.uniform(0, 0.1 * sleep_time)
+                time.sleep(sleep_time)
 
+    def stop(self):
+        self._running = False
 
-def normalize_whitespace(text: Any) -> str:
-    return re.sub(r"\s+", " ", str(text)).strip()
-
-
-def strip_special_chars(text: str) -> str:
-    return re.sub(r"[^\w\s]", "", text)
-
-
-def structurize(data: str) -> Dict[str, Any]:
-    words = data.split()
-    return {
-        "raw": data,
-        "word_count": len(words),
-        "checksum": sum(ord(c) for c in data) % 10000,
-    }
-
-
-clean_pipeline = DataPipe(normalize_whitespace) >> strip_special_chars >> structurize
+    def handle_failure(self, exc: Exception):
+        if self._current_attempt >= self.max_attempts:
+            raise exc
