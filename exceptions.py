@@ -1,43 +1,64 @@
 import sys
-import time
-from typing import Any, Callable, Dict, Type
+import traceback
+from typing import Any, Dict, Optional, Type
 
-class ToolkitError(Exception):
-    """Base exception with dynamic payload tracking and self-inspection capabilities."""
-    def __init__(self, message: str, payload: Dict[str, Any] = None):
+
+class ErrorRegistryMeta(type):
+    """Metaclass that automatically registers toolkit exceptions for dynamic lookup."""
+    _registry: Dict[str, Type["ToolkitError"]] = {}
+
+    def __new__(mcs, name: str, bases: tuple, namespace: dict):
+        cls = super().__new__(mcs, name, bases, namespace)
+        if name != "ToolkitError" and issubclass(cls, Exception):
+            mcs._registry[name] = cls
+        return cls
+
+    @classmethod
+    def get_registered(mcs) -> Dict[str, Type["ToolkitError"]]:
+        return dict(mcs._registry)
+
+
+class ToolkitError(Exception, metaclass=ErrorRegistryMeta):
+    """Base exception supporting contextual payloads and origin frame capture."""
+
+    def __init__(self, message: str, *, code: int = 500, **context: Any):
         super().__init__(message)
-        self.payload = payload or {}
-        self.timestamp = time.time()
+        self.message = message
+        self.code = code
+        self.context = context
+        self.origin = self._capture_origin()
 
-class DynamicFallbackError(ToolkitError):
-    """Raised when an operation fails, packaging a deferred recovery strategy."""
-    def __init__(self, message: str, recovery_callable: Callable[[], Any], payload: Dict[str, Any] = None):
-        super().__init__(message, payload)
-        self.recover = recovery_callable
+    def _capture_origin(self) -> str:
+        stack = traceback.extract_stack(limit=3)
+        if len(stack) >= 2:
+            frame = stack[-2]
+            return f"{frame.filename}:{frame.lineno} in {frame.name}"
+        return "unknown"
 
-class EdgeCaseMitigator:
-    """Context manager to intercept exceptions and deploy custom fallback mechanics."""
-    def __init__(self, fallback_map: Dict[Type[BaseException], Callable[[BaseException], Any]]):
-        self.fallback_map = fallback_map
-        self.last_handled_exception = None
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "error_type": self.__class__.__name__,
+            "message": self.message,
+            "code": self.code,
+            "origin": self.origin,
+            "context": self.context,
+        }
 
-    def __enter__(self):
-        return self
+    @classmethod
+    def wrap(cls, exc: Exception, default_msg: Optional[str] = None) -> "ToolkitError":
+        msg = default_msg or str(exc) or exc.__class__.__name__
+        instance = cls(msg, original_exception=exc.__class__.__name__)
+        instance.__cause__ = exc
+        return instance
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            return False
 
-        for target_type, fallback in self.fallback_map.items():
-            if issubclass(exc_type, target_type):
-                try:
-                    fallback(exc_val)
-                    self.last_handled_exception = exc_val
-                    return True
-                except Exception as cascade_error:
-                    raise DynamicFallbackError(
-                        f"Fallback resolution crashed: {cascade_error}",
-                        recovery_callable=lambda: None,
-                        payload={"original_error": exc_val, "cascade_error": cascade_error}
-                    ) from exc_val
-        return False
+class ConfigurationError(ToolkitError):
+    """Raised when configuration validation or parsing fails."""
+
+
+class ProcessingPipelineError(ToolkitError):
+    """Raised during data transformation or workflow processing errors."""
+
+
+class ValidationFailedError(ToolkitError):
+    """Raised when runtime validation or assertion checks fail."""
