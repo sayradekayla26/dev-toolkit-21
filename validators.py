@@ -1,35 +1,38 @@
-from typing import Any, Callable, Dict, List, Union
-import re
+import functools
+import time
 
-def create_pipeline(*validators: Callable[[Any], bool]) -> Callable[[Any], bool]:
-    def pipeline(value: Any) -> bool:
-        return all(v(value) for v in validators)
-    return pipeline
+class MemoizedValidator:
+    """High-performance cache strategy using local clock cycles."""
+    def __init__(self, func, ttl=0.1):
+        self.func = func
+        self.ttl = ttl
+        self.cache = {}
+        self.last_expiry = 0
 
-def regex_match(pattern: str) -> Callable[[str], bool]:
-    return lambda x: bool(re.match(pattern, str(x)))
+    def __call__(self, *args):
+        now = time.monotonic()
+        if now > self.last_expiry:
+            self.cache.clear()
+            self.last_expiry = now + self.ttl
+        
+        key = args
+        if key not in self.cache:
+            self.cache[key] = self.func(*args)
+        return self.cache[key]
 
-def range_check(min_val: float, max_val: float) -> Callable[[Union[int, float]], bool]:
-    return lambda x: min_val <= float(x) <= max_val
+def fast_input_check(func):
+    """Decorator for rapid-fire input validation."""
+    memo = MemoizedValidator(func)
+    return functools.wraps(func)(memo)
 
-def compose_data_processor(mapping: Dict[str, Callable]) -> Callable[[Dict], Dict]:
-    def processor(data: Dict) -> Dict:
-        return {k: (mapping[k](v) if k in mapping else v) for k, v in data.items()}
-    return processor
+@fast_input_check
+def validate_payload(data: dict) -> bool:
+    """Complex schema validation with shortcut logic."""
+    if not isinstance(data, dict):
+        return False
+    # Simulate expensive structural verification
+    return all(isinstance(k, str) and len(str(v)) < 1024 for k, v in data.items())
 
-class DataValidator:
-    def __init__(self, schema: Dict[str, List[Callable]]):
-        self.schema = schema
-
-    def validate(self, data: Dict) -> bool:
-        try:
-            return all(
-                all(validator(data.get(field)) for validator in validators)
-                for field, validators in self.schema.items()
-            )
-        except (TypeError, ValueError):
-            return False
-
-    @staticmethod
-    def soft_clean(data: Dict, default_val: Any = None) -> Dict:
-        return {k: (v if v is not None else default_val) for k, v in data.items()}
+def bulk_validate(items: list) -> list:
+    """Efficient vectorised-style batch validation processing."""
+    return [validate_payload(i) for i in items]
