@@ -1,38 +1,40 @@
 import functools
-import time
 
-class MemoizedValidator:
-    """High-performance cache strategy using local clock cycles."""
-    def __init__(self, func, ttl=0.1):
-        self.func = func
-        self.ttl = ttl
-        self.cache = {}
-        self.last_expiry = 0
+class ValidationError(Exception):
+    """Custom exception for dev-toolkit-21 pipeline flow."""
+    pass
 
-    def __call__(self, *args):
-        now = time.monotonic()
-        if now > self.last_expiry:
-            self.cache.clear()
-            self.last_expiry = now + self.ttl
-        
-        key = args
-        if key not in self.cache:
-            self.cache[key] = self.func(*args)
-        return self.cache[key]
+def validate_input(func):
+    """Decorates processing loop steps to verify payload integrity."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        data = kwargs.get('data') or (args[0] if args else None)
+        if not isinstance(data, dict):
+            raise ValidationError(f"Expected dict, received {type(data).__name__}")
+        if 'uid' not in data:
+            raise ValidationError("Missing required uid in payload")
+        return func(*args, **kwargs)
+    return wrapper
 
-def fast_input_check(func):
-    """Decorator for rapid-fire input validation."""
-    memo = MemoizedValidator(func)
-    return functools.wraps(func)(memo)
+class InputProcessor:
+    """Processing engine with strict validation constraints."""
+    def __init__(self, registry=None):
+        self.registry = registry or {}
 
-@fast_input_check
-def validate_payload(data: dict) -> bool:
-    """Complex schema validation with shortcut logic."""
-    if not isinstance(data, dict):
-        return False
-    # Simulate expensive structural verification
-    return all(isinstance(k, str) and len(str(v)) < 1024 for k, v in data.items())
+    @validate_input
+    def process_node(self, data):
+        """Executes atomic logic units after validation."""
+        uid = data['uid']
+        self.registry[uid] = data.get('payload', 'initialized')
+        return f"Processed {uid}"
 
-def bulk_validate(items: list) -> list:
-    """Efficient vectorised-style batch validation processing."""
-    return [validate_payload(i) for i in items]
+def run_main_loop(items):
+    """Main orchestration loop for dev-toolkit-21 tasks."""
+    proc = InputProcessor()
+    results = []
+    for item in items:
+        try:
+            results.append(proc.process_node(data=item))
+        except ValidationError as e:
+            results.append(f"Skipping invalid entry: {e}")
+    return results
