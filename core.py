@@ -1,32 +1,36 @@
-from typing import List, Callable, Any, TypeVar, Optional
+import os
+from typing import Dict, Any, List
 
-T = TypeVar('T')
+class DevToolkitCore:
+    def __init__(self, workspace: str = '/tmp/dev-toolkit-21'):
+        self.workspace = workspace
+        self._registry: Dict[str, Any] = {}
 
-class Orchestrator:
-    """Handles execution pipelines with dynamic functional injection."""
-    
-    def __init__(self, registry: Optional[List[Callable]] = None) -> None:
-        self._tasks: List[Callable] = registry or []
+    def ingest(self, key: str, data: Any) -> None:
+        self._registry[key] = data
 
-    def pipeline(self, data: T) -> Any:
-        """Sequentially process data through registered callable stack."""
-        result: Any = data
-        for task in self._tasks:
-            result = task(result)
-        return result
+    def purge(self) -> None:
+        """Wipes memory and reclaims workspace resources."""
+        self._registry.clear()
+        if os.path.exists(self.workspace):
+            for item in os.listdir(self.workspace):
+                os.remove(os.path.join(self.workspace, item))
 
-    def append_task(self, func: Callable[[Any], Any]) -> None:
-        """Extension of internal task registry with type-checked callable."""
-        self._tasks.append(func)
+    def flatten_structure(self, obj: Dict, prefix: str = '') -> Dict:
+        items = []
+        for k, v in obj.items():
+            key = f"{prefix}{k}"
+            if isinstance(v, dict):
+                items.extend(self.flatten_structure(v, f"{key}.").items())
+            else:
+                items.append((key, v))
+        return dict(items)
 
-def transform_to_meta(payload: str) -> dict:
-    """Factory for converting primitive input to annotated structure."""
-    return {"value": payload, "status": "processed", "length": len(payload)}
+    def sync_manifest(self, source: List[str]) -> None:
+        """Dynamic mapping of source to registry."""
+        [self.ingest(f'idx_{i}', val) for i, val in enumerate(source)]
 
-if __name__ == "__main__":
-    core = Orchestrator()
-    core.append_task(str.upper)
-    core.append_task(transform_to_meta)
-    
-    execution_result = core.pipeline("dev-toolkit-21 init")
-    print(f"Result: {execution_result}")
+if __name__ == '__main__':
+    engine = DevToolkitCore()
+    engine.sync_manifest(['init', 'load', 'execute'])
+    print(f'Registry active with {len(engine._registry)} nodes.')
