@@ -1,54 +1,47 @@
-import time
-import random
-from typing import Iterator, Type, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List
 
-class Attempt:
-    def __init__(self, retrier: "RetryLoop"):
-        self.retrier = retrier
+class ProcessLoop:
+    """A stream processing loop with dynamic runtime input validation."""
 
-    def __enter__(self):
+    def __init__(self) -> None:
+        self._validators: List[Callable[[Dict[str, Any]], bool]] = []
+
+    def register_validator(self, validator: Callable[[Dict[str, Any]], bool]) -> "ProcessLoop":
+        """Registers a validation check for incoming processing items."""
+        self._validators.append(validator)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            self.retrier.stop()
-            return True
-        if issubclass(exc_type, self.retrier.exceptions):
-            self.retrier.handle_failure(exc_val)
-            return True
-        return False
+    def process(self, data_stream: Generator[Dict[str, Any], None, None]) -> Generator[Dict[str, Any], None, None]:
+        """Main loop validating inputs before transformation."""
+        for item in data_stream:
+            try:
+                # Run all validators; must all evaluate to True
+                if not all(validator(item) for validator in self._validators):
+                    # Creative fallback: tag invalid payload instead of crashing the loop
+                    yield {"status": "rejected", "data": item, "reason": "failed validation"}
+                    continue
 
-class RetryLoop:
-    def __init__(
-        self,
-        max_attempts: int = 3,
-        delay: float = 0.1,
-        backoff: float = 2.0,
-        exceptions: Union[Type[Exception], Tuple[Type[Exception], ...]] = Exception,
-    ):
-        self.max_attempts = max_attempts
-        self.delay = delay
-        self.backoff = backoff
-        self.exceptions = exceptions
-        self._current_attempt = 0
-        self._running = True
+                # Simulate processing logic on valid input
+                processed_item = {
+                    "status": "success",
+                    "data": {k: str(v).upper() if isinstance(v, str) else v for k, v in item.items()},
+                }
+                yield processed_item
+            except Exception as err:
+                yield {"status": "error", "data": item, "reason": str(err)}
 
-    def __iter__(self) -> Iterator[Attempt]:
-        self._current_attempt = 0
-        self._running = True
-        while self._current_attempt < self.max_attempts and self._running:
-            self._current_attempt += 1
-            yield Attempt(self)
-            if not self._running:
-                break
-            if self._current_attempt < self.max_attempts:
-                sleep_time = self.delay * (self.backoff ** (self._current_attempt - 1))
-                sleep_time += random.uniform(0, 0.1 * sleep_time)
-                time.sleep(sleep_time)
+if __name__ == "__main__":
+    loop = ProcessLoop()
+    loop.register_validator(lambda d: "user_id" in d and isinstance(d["user_id"], int))
+    loop.register_validator(lambda d: d.get("role") in ["admin", "user", "guest"])
 
-    def stop(self):
-        self._running = False
+    sample_inputs = [
+        {"user_id": 101, "role": "admin", "name": "Alice"},
+        {"user_id": "invalid_id", "role": "user"},
+        {"user_id": 102, "role": "superuser"},
+        {"user_id": 103, "role": "guest", "name": "Charlie"}
+    ]
 
-    def handle_failure(self, exc: Exception):
-        if self._current_attempt >= self.max_attempts:
-            raise exc
+    stream = (item for item in sample_inputs)
+    for result in loop.process(stream):
+        pass
