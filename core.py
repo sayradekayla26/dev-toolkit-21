@@ -1,36 +1,43 @@
-import os
-from typing import Dict, Any, List
+import sys
+from typing import Callable, Any, Tuple
 
-class DevToolkitCore:
-    def __init__(self, workspace: str = '/tmp/dev-toolkit-21'):
-        self.workspace = workspace
-        self._registry: Dict[str, Any] = {}
+class FastRegisterCache:
+    """
+    A creative dual-register L1/L2 cache decorator for high-frequency operations.
+    Bypasses standard dict hash lookups for consecutive identical arguments
+    by storing them in fast-access local slot variables (registers).
+    """
+    def __init__(self, func: Callable[..., Any]):
+        self.func = func
+        self.r1_key: Tuple[Any, ...] = ()
+        self.r1_val: Any = None
+        self.r1_active = False
+        self.l2_space = type("L2Space", (), {})()
 
-    def ingest(self, key: str, data: Any) -> None:
-        self._registry[key] = data
+    def __call__(self, *args: Any) -> Any:
+        if self.r1_active and self.r1_key == args:
+            return self.r1_val
 
-    def purge(self) -> None:
-        """Wipes memory and reclaims workspace resources."""
-        self._registry.clear()
-        if os.path.exists(self.workspace):
-            for item in os.listdir(self.workspace):
-                os.remove(os.path.join(self.workspace, item))
+        attr_key = sys.intern(f"c_{hash(args)}")
+        try:
+            res = getattr(self.l2_space, attr_key)
+            self.r1_key = args
+            self.r1_val = res
+            self.r1_active = True
+            return res
+        except AttributeError:
+            pass
 
-    def flatten_structure(self, obj: Dict, prefix: str = '') -> Dict:
-        items = []
-        for k, v in obj.items():
-            key = f"{prefix}{k}"
-            if isinstance(v, dict):
-                items.extend(self.flatten_structure(v, f"{key}.").items())
-            else:
-                items.append((key, v))
-        return dict(items)
+        result = self.func(*args)
+        setattr(self.l2_space, attr_key, result)
+        
+        self.r1_key = args
+        self.r1_val = result
+        self.r1_active = True
+        return result
 
-    def sync_manifest(self, source: List[str]) -> None:
-        """Dynamic mapping of source to registry."""
-        [self.ingest(f'idx_{i}', val) for i, val in enumerate(source)]
-
-if __name__ == '__main__':
-    engine = DevToolkitCore()
-    engine.sync_manifest(['init', 'load', 'execute'])
-    print(f'Registry active with {len(engine._registry)} nodes.')
+    def invalidate(self) -> None:
+        self.r1_active = False
+        self.r1_val = None
+        self.r1_key = ()
+        self.l2_space = type("L2Space", (), {})()
