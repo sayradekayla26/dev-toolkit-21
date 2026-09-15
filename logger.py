@@ -1,35 +1,36 @@
-import sys
-import time
-import inspect
-from typing import Any
+import logging
+from logging.handlers import RotatingFileHandler
+import os
 
-class DataLogger:
-    def __init__(self, stream=sys.stdout, prefix='[DEV-TOOLKIT-21]'):
-        self.stream = stream
-        self.prefix = prefix
-        self.history = []
+def get_dev_logger(name='dev-toolkit-21', log_file='app.log'):
+    """
+    custom rotating logger factory for dev environments
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    formatter = logging.Formatter(
+        '[%(asctime)s] %(levelname)s | %(name)s | %(message)s',
+        datefmt='%H:%M:%S'
+    )
 
-    def __call__(self, data: Any, level: str = 'INFO') -> None:
-        frame = inspect.stack()[1]
-        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-        caller = f"{frame.function}:{frame.lineno}"
-        
-        payload = {
-            "ts": timestamp,
-            "lvl": level.upper(),
-            "src": caller,
-            "val": str(data)
-        }
-        
-        self.history.append(payload)
-        formatted = f"{self.prefix} {payload['ts']} | {payload['lvl']} | {payload['src']} >> {payload['val']}"
-        self.stream.write(formatted + '\n')
-        self.stream.flush()
+    # rotate at 5MB, keep 3 historical backups
+    handler = RotatingFileHandler(
+        log_file, 
+        maxBytes=5*1024*1024, 
+        backupCount=3
+    )
+    handler.setFormatter(formatter)
 
-    def dump_session(self) -> list:
-        return self.history
+    # ensure we do not duplicate handlers if called twice
+    if not logger.handlers:
+        logger.addHandler(handler)
+        # stream output for real-time console feedback
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        logger.addHandler(console)
 
-    def clear(self) -> None:
-        self.history.clear()
+    return logger
 
-logger = DataLogger()
+# global singleton for easy access across the project
+app_logger = get_dev_logger()
