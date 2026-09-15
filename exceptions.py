@@ -1,64 +1,37 @@
+import functools
+import time
 import sys
-import traceback
-from typing import Any, Dict, Optional, Type
 
+class PerformanceOptimizer:
+    """Static class for memoization with time-to-live expiration logic."""
+    _cache = {}
 
-class ErrorRegistryMeta(type):
-    """Metaclass that automatically registers toolkit exceptions for dynamic lookup."""
-    _registry: Dict[str, Type["ToolkitError"]] = {}
+    @staticmethod
+    def fast_cache(ttl=60):
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                key = (func.__name__, args, frozenset(kwargs.items()))
+                now = time.time()
+                if key in PerformanceOptimizer._cache:
+                    result, expiry = PerformanceOptimizer._cache[key]
+                    if now < expiry:
+                        return result
+                result = func(*args, **kwargs)
+                PerformanceOptimizer._cache[key] = (result, now + ttl)
+                return result
+            return wrapper
+        return decorator
 
-    def __new__(mcs, name: str, bases: tuple, namespace: dict):
-        cls = super().__new__(mcs, name, bases, namespace)
-        if name != "ToolkitError" and issubclass(cls, Exception):
-            mcs._registry[name] = cls
-        return cls
+class CoreOptimizationError(Exception):
+    """Custom exception for orchestration failures."""
+    pass
 
-    @classmethod
-    def get_registered(mcs) -> Dict[str, Type["ToolkitError"]]:
-        return dict(mcs._registry)
-
-
-class ToolkitError(Exception, metaclass=ErrorRegistryMeta):
-    """Base exception supporting contextual payloads and origin frame capture."""
-
-    def __init__(self, message: str, *, code: int = 500, **context: Any):
-        super().__init__(message)
-        self.message = message
-        self.code = code
-        self.context = context
-        self.origin = self._capture_origin()
-
-    def _capture_origin(self) -> str:
-        stack = traceback.extract_stack(limit=3)
-        if len(stack) >= 2:
-            frame = stack[-2]
-            return f"{frame.filename}:{frame.lineno} in {frame.name}"
-        return "unknown"
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "error_type": self.__class__.__name__,
-            "message": self.message,
-            "code": self.code,
-            "origin": self.origin,
-            "context": self.context,
-        }
-
-    @classmethod
-    def wrap(cls, exc: Exception, default_msg: Optional[str] = None) -> "ToolkitError":
-        msg = default_msg or str(exc) or exc.__class__.__name__
-        instance = cls(msg, original_exception=exc.__class__.__name__)
-        instance.__cause__ = exc
-        return instance
-
-
-class ConfigurationError(ToolkitError):
-    """Raised when configuration validation or parsing fails."""
-
-
-class ProcessingPipelineError(ToolkitError):
-    """Raised during data transformation or workflow processing errors."""
-
-
-class ValidationFailedError(ToolkitError):
-    """Raised when runtime validation or assertion checks fail."""
+def optimized_dispatch(func):
+    """Generator-based middleware for memory-efficient function execution."""
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            raise CoreOptimizationError(f"Dispatch failure: {str(e)}") from e
+    return inner
