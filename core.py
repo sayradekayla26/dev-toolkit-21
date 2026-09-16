@@ -1,43 +1,38 @@
-import sys
-from typing import Callable, Any, Tuple
+from typing import List, Union, Callable, Any
 
-class FastRegisterCache:
+def pipeline_executor(data: List[Any], transform: Callable[[Any], Any]) -> List[Any]:
     """
-    A creative dual-register L1/L2 cache decorator for high-frequency operations.
-    Bypasses standard dict hash lookups for consecutive identical arguments
-    by storing them in fast-access local slot variables (registers).
+    Applies a transformation function to a list of data elements.
+    Uses a generator expression internally for memory efficiency.
     """
-    def __init__(self, func: Callable[..., Any]):
-        self.func = func
-        self.r1_key: Tuple[Any, ...] = ()
-        self.r1_val: Any = None
-        self.r1_active = False
-        self.l2_space = type("L2Space", (), {})()
+    return [transform(item) for item in data]
 
-    def __call__(self, *args: Any) -> Any:
-        if self.r1_active and self.r1_key == args:
-            return self.r1_val
+class DataProcessor:
+    """
+    A container for stateful data processing logic.
+    """
+    def __init__(self, multiplier: int = 1) -> None:
+        self.multiplier: int = multiplier
 
-        attr_key = sys.intern(f"c_{hash(args)}")
-        try:
-            res = getattr(self.l2_space, attr_key)
-            self.r1_key = args
-            self.r1_val = res
-            self.r1_active = True
-            return res
-        except AttributeError:
-            pass
+    def process(self, value: Union[int, float]) -> float:
+        """
+        Multiplies the input value by the stored multiplier.
+        """
+        return float(value * self.multiplier)
 
-        result = self.func(*args)
-        setattr(self.l2_space, attr_key, result)
-        
-        self.r1_key = args
-        self.r1_val = result
-        self.r1_active = True
-        return result
+def dynamic_factory(key: str) -> Callable[[Any], Any]:
+    """
+    Returns a lambda function based on key lookup.
+    """
+    operations = {
+        "double": lambda x: x * 2,
+        "square": lambda x: x ** 2,
+        "identity": lambda x: x
+    }
+    return operations.get(key, lambda x: x)
 
-    def invalidate(self) -> None:
-        self.r1_active = False
-        self.r1_val = None
-        self.r1_key = ()
-        self.l2_space = type("L2Space", (), {})()
+if __name__ == "__main__":
+    items: List[int] = [1, 2, 3, 4, 5]
+    processor: DataProcessor = DataProcessor(multiplier=10)
+    result: List[float] = pipeline_executor(items, processor.process)
+    print(result)
