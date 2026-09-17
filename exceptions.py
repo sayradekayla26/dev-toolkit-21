@@ -1,37 +1,52 @@
-import functools
-import time
 import sys
+import time
+from typing import Any, Dict, Callable
 
-class PerformanceOptimizer:
-    """Static class for memoization with time-to-live expiration logic."""
-    _cache = {}
+class QuantumException(Exception):
+    """
+    An exception whose state dynamically alters based on how many times
+    it has been queried, or the elapsed time since its creation.
+    """
+    def __init__(self, base_message: str, context: Dict[str, Any] = None):
+        self.base_message = base_message
+        self.context = context or {}
+        self.created_at = time.time()
+        self._access_count = 0
+        super().__init__(self.base_message)
 
-    @staticmethod
-    def fast_cache(ttl=60):
-        def decorator(func):
-            @functools.wraps(func)
-            def wrapper(*args, **kwargs):
-                key = (func.__name__, args, frozenset(kwargs.items()))
-                now = time.time()
-                if key in PerformanceOptimizer._cache:
-                    result, expiry = PerformanceOptimizer._cache[key]
-                    if now < expiry:
-                        return result
-                result = func(*args, **kwargs)
-                PerformanceOptimizer._cache[key] = (result, now + ttl)
-                return result
-            return wrapper
-        return decorator
+    @property
+    def age(self) -> float:
+        return time.time() - self.created_at
 
-class CoreOptimizationError(Exception):
-    """Custom exception for orchestration failures."""
-    pass
+    def __str__(self) -> str:
+        self._access_count += 1
+        severity = "CRITICAL" if self._access_count > 3 else "WARNING"
+        return (
+            f"[{severity}] {self.base_message} (Observed x{self._access_count}, "
+            f"Age: {self.age:.4f}s, Context: {self.context})"
+        )
 
-def optimized_dispatch(func):
-    """Generator-based middleware for memory-efficient function execution."""
-    def inner(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            raise CoreOptimizationError(f"Dispatch failure: {str(e)}") from e
-    return inner
+class EdgeCaseShield:
+    """
+    A decorator to intercept unexpected edge cases and transform them
+    into QuantumExceptions with execution state capture.
+    """
+    def __init__(self, fallback: Any = None):
+        self.fallback = fallback
+
+    def __call__(self, func: Callable) -> Callable:
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                context = {
+                    "function": func.__name__,
+                    "args_len": len(args),
+                    "kwargs_keys": list(kwargs.keys()),
+                    "exception_type": type(e).__name__
+                }
+                raise QuantumException(
+                    f"Shielded execution failure inside '{func.__name__}'",
+                    context=context
+                ) from e
+        return wrapper
