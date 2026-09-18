@@ -1,35 +1,40 @@
-import json
-import os
-from typing import Any, Dict
+import functools
+import time
+import logging
+from typing import Callable, Any
 
-class ConfigLoader:
-    """Dynamic dictionary proxy for configuration defaults."""
-    def __init__(self, defaults: Dict[str, Any]):
-        self._data = defaults
+def retry_with_backoff(retries: int = 3, delay: float = 1.0):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    time.sleep(delay * (2 ** attempt))
+            raise last_ex
+        return wrapper
+    return decorator
 
-    def load_from_env(self, prefix: str = "APP_") -> None:
-        for key in self._data:
-            env_key = f"{prefix}{key.upper()}"
-            if env_key in os.environ:
-                val = os.environ[env_key]
-                self._data[key] = int(val) if val.isdigit() else val
+def deep_freeze(obj: Any) -> Any:
+    if isinstance(obj, list):
+        return tuple(deep_freeze(i) for i in obj)
+    elif isinstance(obj, dict):
+        return frozenset((k, deep_freeze(v)) for k, v in obj.items())
+    return obj
 
-    def load_from_json(self, path: str) -> None:
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                self._data.update(json.load(f))
+def time_execution(func: Callable):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+        logging.info(f"execution of {func.__name__} took {end - start:.4f}s")
+        return result
+    return wrapper
 
-    def __getitem__(self, key: str) -> Any:
-        return self._data.get(key)
-
-    def __repr__(self) -> str:
-        return f"ConfigLoader({self._data})"
-
-    @property
-    def settings(self) -> Dict[str, Any]:
-        return self._data.copy()
-
-# Usage example:
-# cfg = ConfigLoader({'port': 8080, 'debug': False})
-# cfg.load_from_env()
-# print(cfg['port'])
+def chunks(lst: list, n: int):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
