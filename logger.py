@@ -2,35 +2,30 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
-def get_dev_logger(name='dev-toolkit-21', log_file='app.log'):
-    """
-    custom rotating logger factory for dev environments
-    """
+def get_logger(name='dev-toolkit-21', log_file='app.log'):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
     formatter = logging.Formatter(
-        '[%(asctime)s] %(levelname)s | %(name)s | %(message)s',
-        datefmt='%H:%M:%S'
+        '%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s'
     )
-
-    # rotate at 5MB, keep 3 historical backups
-    handler = RotatingFileHandler(
+    
+    file_handler = RotatingFileHandler(
         log_file, 
-        maxBytes=5*1024*1024, 
+        maxBytes=1024 * 1024 * 5, 
         backupCount=3
     )
-    handler.setFormatter(formatter)
-
-    # ensure we do not duplicate handlers if called twice
+    file_handler.setFormatter(formatter)
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    
     if not logger.handlers:
-        logger.addHandler(handler)
-        # stream output for real-time console feedback
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+        
     return logger
 
-# global singleton for easy access across the project
-app_logger = get_dev_logger()
+if __name__ == '__main__':
+    log = get_logger()
+    log.info('logger initialization successful')
