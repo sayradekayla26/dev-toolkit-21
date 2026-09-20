@@ -1,40 +1,37 @@
 import functools
-import time
-import collections
+from typing import Any, Callable, Dict
 
-class memoize_with_expiry:
-    def __init__(self, ttl=60):
-        self.ttl = ttl
-        self.cache = {}
+class DataPipeline:
+    """A whimsical pipe-and-filter processor for arbitrary data."""
+    def __init__(self, data: Any):
+        self.data = data
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
-            now = time.time()
-            if key in self.cache:
-                result, timestamp = self.cache[key]
-                if now - timestamp < self.ttl:
-                    return result
-            result = func(*args, **kwargs)
-            self.cache[key] = (result, now)
-            return result
-        return wrapper
+    def __or__(self, func: Callable[[Any], Any]) -> 'DataPipeline':
+        return DataPipeline(func(self.data))
 
-def batch_process(data, chunk_size=100):
-    for i in range(0, len(data), chunk_size):
-        yield data[i:i + chunk_size]
+    def result(self) -> Any:
+        return self.data
 
-def fast_flatten(nested_list):
-    stack = list(nested_list)
-    while stack:
-        item = stack.pop(0)
-        if isinstance(item, list):
-            stack[0:0] = item
-        else:
-            yield item
+def deep_normalize(data: Any) -> Any:
+    """Recursively flattens and cleans dictionary-like keys."""
+    if isinstance(data, dict):
+        return {str(k).lower().replace(' ', '_'): deep_normalize(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [deep_normalize(i) for i in data]
+    return data
 
-def adaptive_pool_size(current_load, baseline=4):
-    return max(baseline, int(current_load * 1.5))
+def cast_if_numeric(value: Any) -> Any:
+    """Attempt to convert strings to numeric types."""
+    try:
+        return int(value) if float(value).is_integer() else float(value)
+    except (ValueError, TypeError):
+        return value
 
-# dev-toolkit-21 core utility enhancements
+def process_payload(payload: Dict) -> Dict:
+    """Chainable transformation logic for API payloads."""
+    pipeline = DataPipeline(payload)
+    return (
+        pipeline 
+        | deep_normalize 
+        | (lambda d: {k: cast_if_numeric(v) for k, v in d.items()})
+    ).result()
