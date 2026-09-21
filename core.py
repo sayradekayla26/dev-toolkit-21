@@ -1,37 +1,38 @@
-import time
-import functools
-from typing import Callable, Type, Tuple, Any, Union
+import os
+from typing import Any, Callable, Dict
 
-class ChaoticBackoff:
-    """Generates deterministic pseudo-random delays using a chaotic logistic map."""
-    def __init__(self, base_delay: float = 1.0, chaos_factor: float = 3.9):
-        self.base = base_delay
-        self.r = chaos_factor
-        self.x = 0.35
+class ToolkitEngine:
+    def __init__(self, registry: Dict[str, Callable] = None):
+        self._registry = registry or {}
 
-    def next_delay(self, attempt: int) -> float:
-        self.x = self.r * self.x * (1.0 - self.x)
-        exponential_part = self.base * (1.618 ** attempt)
-        jitter = self.x * self.base
-        return exponential_part + jitter
+    def register(self, name: str):
+        def decorator(func: Callable):
+            self._registry[name] = func
+            return func
+        return decorator
 
-def retry_on_failure(
-    exceptions: Union[Type[BaseException], Tuple[Type[BaseException], ...]] = Exception,
-    max_attempts: int = 4,
-    base_delay: float = 0.5
-) -> Callable:
-    """Decorator applying chaotic golden-ratio backoff retry logic to operations."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            backoff = ChaoticBackoff(base_delay=base_delay)
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as err:
-                    if attempt >= max_attempts:
-                        raise err
-                    delay = backoff.next_delay(attempt)
-                    time.sleep(delay)
-        return wrapper
-    return decorator
+    def execute(self, command: str, *args: Any, **kwargs: Any) -> Any:
+        handler = self._registry.get(command)
+        if not handler:
+            raise ValueError(f'Command {command} not found')
+        return handler(*args, **kwargs)
+
+    @staticmethod
+    def cleanup_resources(path: str):
+        if os.path.exists(path):
+            for item in os.listdir(path):
+                target = os.path.join(path, item)
+                if os.path.isfile(target):
+                    os.remove(target)
+
+def main():
+    engine = ToolkitEngine()
+    
+    @engine.register('ping')
+    def ping():
+        return 'pong'
+
+    print(engine.execute('ping'))
+
+if __name__ == '__main__':
+    main()
