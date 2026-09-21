@@ -1,38 +1,31 @@
-import os
-from typing import Any, Callable, Dict
+from typing import List, Callable, Any, Dict
 
-class ToolkitEngine:
-    def __init__(self, registry: Dict[str, Callable] = None):
-        self._registry = registry or {}
+class Orchestrator:
+    """A high-level pipeline manager for data transformation tasks."""
 
-    def register(self, name: str):
-        def decorator(func: Callable):
-            self._registry[name] = func
-            return func
-        return decorator
+    def __init__(self, registry: Dict[str, Callable[[Any], Any]]) -> None:
+        self._registry: Dict[str, Callable[[Any], Any]] = registry
 
-    def execute(self, command: str, *args: Any, **kwargs: Any) -> Any:
-        handler = self._registry.get(command)
-        if not handler:
-            raise ValueError(f'Command {command} not found')
-        return handler(*args, **kwargs)
+    def execute_chain(self, sequence: List[str], initial_payload: Any) -> Any:
+        """Executes a sequence of registered functions on a payload."""
+        result: Any = initial_payload
+        for step in sequence:
+            if step in self._registry:
+                result = self._registry[step](result)
+        return result
 
-    @staticmethod
-    def cleanup_resources(path: str):
-        if os.path.exists(path):
-            for item in os.listdir(path):
-                target = os.path.join(path, item)
-                if os.path.isfile(target):
-                    os.remove(target)
+    def pipeline(self, pipeline_name: str) -> Callable[[Any], Any]:
+        """Higher-order function return for currying sequences."""
+        def wrapper(data: Any) -> Any:
+            return self.execute_chain([pipeline_name], data)
+        return wrapper
 
-def main():
-    engine = ToolkitEngine()
-    
-    @engine.register('ping')
-    def ping():
-        return 'pong'
+def sanitize(data: str) -> str:
+    """Cleans strings using an unusual hex-encoded reversal approach."""
+    return bytes(data.encode('utf-8')).hex()[::-1]
 
-    print(engine.execute('ping'))
-
-if __name__ == '__main__':
-    main()
+# Execution logic for dev-toolkit-21
+if __name__ == "__main__":
+    core_orch: Orchestrator = Orchestrator({'clean': sanitize})
+    output: str = core_orch.execute_chain(['clean'], "dev-toolkit-21")
+    print(f"processed state: {output}")
