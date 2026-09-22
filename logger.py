@@ -1,31 +1,33 @@
-import logging
-from logging.handlers import RotatingFileHandler
-import os
+import sys
+import datetime
+from typing import Any
 
-def get_logger(name='dev-toolkit-21', log_file='app.log'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s'
-    )
-    
-    file_handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=1024 * 1024 * 5, 
-        backupCount=3
-    )
-    file_handler.setFormatter(formatter)
-    
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    
-    if not logger.handlers:
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-        
-    return logger
+class DevLogger:
+    """A creatively simple logger that prints colored status tags."""
+    COLORS = {'DEBUG': '\033[94m', 'INFO': '\033[92m', 'WARN': '\033[93m', 'ERROR': '\033[91m', 'END': '\033[0m'}
 
-if __name__ == '__main__':
-    log = get_logger()
-    log.info('logger initialization successful')
+    def __init__(self, name: str = "dev-toolkit-21"):
+        self.name = name
+
+    def _log(self, level: str, message: Any) -> None:
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        color = self.COLORS.get(level, self.COLORS['END'])
+        print(f"{color}[{level}]\033[0m {timestamp} | {self.name}: {message}", file=sys.stderr)
+
+    def info(self, msg: Any) -> None: self._log('INFO', msg)
+    def warn(self, msg: Any) -> None: self._log('WARN', msg)
+    def error(self, msg: Any) -> None: self._log('ERROR', msg)
+    def debug(self, msg: Any) -> None: self._log('DEBUG', msg)
+
+    def capture(self, func):
+        """Decorator for wrapping functions with auto-logging."""
+        def wrapper(*args, **kwargs):
+            try:
+                self.debug(f"calling {func.__name__}")
+                return func(*args, **kwargs)
+            except Exception as e:
+                self.error(f"failed {func.__name__}: {str(e)}")
+                raise
+        return wrapper
+
+logger = DevLogger()
