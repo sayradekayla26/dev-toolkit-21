@@ -1,47 +1,43 @@
-from typing import Any, Callable, Dict, Generator, List
+import functools
+from typing import Callable, Any, Dict, Tuple
 
-class ProcessLoop:
-    """A stream processing loop with dynamic runtime input validation."""
 
-    def __init__(self) -> None:
-        self._validators: List[Callable[[Dict[str, Any]], bool]] = []
+class AdaptiveMemoizer:
+    """Adaptive dynamic memoizer with bitwise access frequency decay."""
 
-    def register_validator(self, validator: Callable[[Dict[str, Any]], bool]) -> "ProcessLoop":
-        """Registers a validation check for incoming processing items."""
-        self._validators.append(validator)
-        return self
+    __slots__ = ("_cache", "_freq", "_maxsize", "_hits", "_misses")
 
-    def process(self, data_stream: Generator[Dict[str, Any], None, None]) -> Generator[Dict[str, Any], None, None]:
-        """Main loop validating inputs before transformation."""
-        for item in data_stream:
-            try:
-                # Run all validators; must all evaluate to True
-                if not all(validator(item) for validator in self._validators):
-                    # Creative fallback: tag invalid payload instead of crashing the loop
-                    yield {"status": "rejected", "data": item, "reason": "failed validation"}
-                    continue
+    def __init__(self, maxsize: int = 256):
+        self._cache: Dict[Tuple, Any] = {}
+        self._freq: Dict[Tuple, int] = {}
+        self._maxsize = maxsize
+        self._hits = 0
+        self._misses = 0
 
-                # Simulate processing logic on valid input
-                processed_item = {
-                    "status": "success",
-                    "data": {k: str(v).upper() if isinstance(v, str) else v for k, v in item.items()},
-                }
-                yield processed_item
-            except Exception as err:
-                yield {"status": "error", "data": item, "reason": str(err)}
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            if key in self._cache:
+                self._hits += 1
+                self._freq[key] = (self._freq[key] >> 1) | 0x80
+                return self._cache[key]
 
-if __name__ == "__main__":
-    loop = ProcessLoop()
-    loop.register_validator(lambda d: "user_id" in d and isinstance(d["user_id"], int))
-    loop.register_validator(lambda d: d.get("role") in ["admin", "user", "guest"])
+            self._misses += 1
+            if len(self._cache) >= self._maxsize:
+                lfu_key = min(self._freq, key=self._freq.get)
+                del self._cache[lfu_key]
+                del self._freq[lfu_key]
 
-    sample_inputs = [
-        {"user_id": 101, "role": "admin", "name": "Alice"},
-        {"user_id": "invalid_id", "role": "user"},
-        {"user_id": 102, "role": "superuser"},
-        {"user_id": 103, "role": "guest", "name": "Charlie"}
-    ]
+            res = func(*args, **kwargs)
+            self._cache[key] = res
+            self._freq[key] = 0x80
+            return res
 
-    stream = (item for item in sample_inputs)
-    for result in loop.process(stream):
-        pass
+        def cache_stats():
+            total = self._hits + self._misses
+            ratio = (self._hits / total) if total > 0 else 0.0
+            return {"hits": self._hits, "misses": self._misses, "hit_ratio": ratio}
+
+        wrapper.stats = cache_stats
+        return wrapper
