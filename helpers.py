@@ -1,41 +1,17 @@
+import json
 import time
-import functools
-import collections
-from typing import Callable, Any, Dict
+from typing import Any, Callable, TypeVar, ParamSpec
+from functools import wraps
 
-def memoize_with_ttl(seconds: int = 300):
-    """creative cache with expiration using closure state"""
-    cache = {}
-    expiry = {}
+T = TypeVar('T')
+P = ParamSpec('P')
 
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
-            now = time.time()
-            if key not in cache or (now - expiry.get(key, 0) > seconds):
-                cache[key] = func(*args, **kwargs)
-                expiry[key] = now
-            return cache[key]
-        return wrapper
-    return decorator
-
-def deep_update(source: Dict, overrides: Dict) -> Dict:
-    """recursive dictionary fusion for complex configuration objects"""
-    for key, value in overrides.items():
-        if isinstance(value, collections.abc.Mapping) and value:
-            source[key] = deep_update(source.get(key, {}), value)
-        else:
-            source[key] = overrides[key]
-    return source
-
-def retry_operation(attempts: int = 3, delay: float = 1.0):
-    """robust execution wrapper for volatile external interactions"""
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+def retry_on_failure(retries: int = 3, delay: float = 1.0):
+    def decorator(func: Callable[P, T]) -> Callable[P, T]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             last_ex = None
-            for _ in range(attempts):
+            for _ in range(retries):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
@@ -44,3 +20,25 @@ def retry_operation(attempts: int = 3, delay: float = 1.0):
             raise last_ex
         return wrapper
     return decorator
+
+def memoize_to_disk(filepath: str):
+    def decorator(func: Callable[P, T]) -> Callable[P, T]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            key = str((args, kwargs))
+            try:
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+                if key in data: return data[key]
+            except (FileNotFoundError, json.JSONDecodeError): data = {}
+            
+            result = func(*args, **kwargs)
+            data[key] = result
+            with open(filepath, 'w') as f:
+                json.dump(data, f)
+            return result
+        return wrapper
+    return decorator
+
+def flatten(iterable: Any) -> list:
+    return [item for sublist in iterable for item in (flatten(sublist) if isinstance(sublist, (list, tuple)) else [sublist])]
