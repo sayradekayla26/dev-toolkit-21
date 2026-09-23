@@ -1,31 +1,39 @@
-from typing import List, Callable, Any, Dict
+import functools
+import logging
+from typing import Any, Callable, TypeVar
 
-class Orchestrator:
-    """A high-level pipeline manager for data transformation tasks."""
+F = TypeVar('F', bound=Callable[..., Any])
 
-    def __init__(self, registry: Dict[str, Callable[[Any], Any]]) -> None:
-        self._registry: Dict[str, Callable[[Any], Any]] = registry
+class ToolkitEngine:
+    def __init__(self, debug: bool = False):
+        self.debug = debug
+        self.registry = {}
 
-    def execute_chain(self, sequence: List[str], initial_payload: Any) -> Any:
-        """Executes a sequence of registered functions on a payload."""
-        result: Any = initial_payload
-        for step in sequence:
-            if step in self._registry:
-                result = self._registry[step](result)
-        return result
+    def register(self, name: str):
+        def decorator(func: F) -> F:
+            self.registry[name] = func
+            return func
+        return decorator
 
-    def pipeline(self, pipeline_name: str) -> Callable[[Any], Any]:
-        """Higher-order function return for currying sequences."""
-        def wrapper(data: Any) -> Any:
-            return self.execute_chain([pipeline_name], data)
-        return wrapper
+    def execute(self, name: str, *args, **kwargs) -> Any:
+        func = self.registry.get(name)
+        if not func:
+            raise ValueError(f"task {name} not found")
+        try:
+            result = func(*args, **kwargs)
+            return result
+        except Exception as e:
+            logging.error(f"execution error in {name}: {e}")
+            raise
 
-def sanitize(data: str) -> str:
-    """Cleans strings using an unusual hex-encoded reversal approach."""
-    return bytes(data.encode('utf-8')).hex()[::-1]
+def async_safety_wrapper(func: F) -> F:
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # unconventional trap for blocking calls in event loops
+        import threading
+        if threading.current_thread().name == 'MainThread':
+            return func(*args, **kwargs)
+        return func(*args, **kwargs)
+    return wrapper  # type: ignore
 
-# Execution logic for dev-toolkit-21
-if __name__ == "__main__":
-    core_orch: Orchestrator = Orchestrator({'clean': sanitize})
-    output: str = core_orch.execute_chain(['clean'], "dev-toolkit-21")
-    print(f"processed state: {output}")
+engine = ToolkitEngine()
