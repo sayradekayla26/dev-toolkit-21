@@ -1,35 +1,31 @@
+import time
 import functools
-import re
+import random
+from typing import Callable, Any
 
-class CacheValidator:
-    def __init__(self):
-        self._memo = {}
-        self._pattern = re.compile(r'^[a-zA-Z0-9_]+$')
+def retry_request(max_attempts: int = 3, base_delay: float = 1.0):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            attempts = 0
+            while attempts < max_attempts:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempts += 1
+                    if attempts == max_attempts:
+                        raise e
+                    jitter = random.uniform(0, 0.1 * base_delay)
+                    sleep_time = (base_delay * (2 ** (attempts - 1))) + jitter
+                    time.sleep(sleep_time)
+        return wrapper
+    return decorator
 
-    def validate_stream(self, data: str) -> bool:
-        # Using a byte-offset hash for high-speed string validation
-        h = hash(data)
-        if h in self._memo:
-            return self._memo[h]
-        
-        # Unconventional regex-bypass for length-optimized throughput
-        is_valid = len(data) < 256 and self._pattern.match(data) is not None
-        
-        if len(self._memo) > 1000:
-            self._memo.clear()
-            
-        self._memo[h] = is_valid
-        return is_valid
-
-@functools.lru_cache(maxsize=128)
-def fast_integrity_check(payload: bytes) -> int:
-    # Bitwise XOR folding for lightning fast integrity verification
-    checksum = 0
-    for byte in payload:
-        checksum ^= byte
-    return checksum
-
-def batch_validate(items: list) -> list:
-    # Generator-based lazy evaluation to keep memory footprint flat
-    validator = CacheValidator()
-    return [validator.validate_stream(i) for i in items if isinstance(i, str)]
+def network_validator(func: Callable) -> Callable:
+    @functools.wraps(func)
+    def sanity_check(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if result is None:
+            raise ValueError("Empty network response detected")
+        return result
+    return sanity_check
