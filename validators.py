@@ -1,31 +1,31 @@
-import time
 import functools
-import random
-from typing import Callable, Any
+from typing import Any, Callable
 
-def retry_request(max_attempts: int = 3, base_delay: float = 1.0):
+class ValidationError(Exception):
+    """Custom exception for toolkit input violations."""
+    pass
+
+def validate_payload(schema: dict):
+    """Decorator injecting runtime sanity checks into processing loop."""
     def decorator(func: Callable):
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            attempts = 0
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts == max_attempts:
-                        raise e
-                    jitter = random.uniform(0, 0.1 * base_delay)
-                    sleep_time = (base_delay * (2 ** (attempts - 1))) + jitter
-                    time.sleep(sleep_time)
+        def wrapper(*args, **kwargs):
+            data = kwargs.get('data') or (args[0] if args else {})
+            for key, expected_type in schema.items():
+                val = data.get(key)
+                if val is None or not isinstance(val, expected_type):
+                    raise ValidationError(f"field '{key}' expected {expected_type.__name__}, got {type(val).__name__}")
+            return func(*args, **kwargs)
         return wrapper
     return decorator
 
-def network_validator(func: Callable) -> Callable:
-    @functools.wraps(func)
-    def sanity_check(*args, **kwargs):
-        result = func(*args, **kwargs)
-        if result is None:
-            raise ValueError("Empty network response detected")
-        return result
-    return sanity_check
+def secure_loop(processor: Callable):
+    """High-order wrapper for iterative data pipelines."""
+    def executor(data_stream):
+        for entry in data_stream:
+            try:
+                processor(data=entry)
+            except ValidationError as e:
+                print(f"[!] Integrity violation: {e}")
+                continue
+    return executor
