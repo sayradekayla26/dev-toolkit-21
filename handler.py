@@ -1,31 +1,56 @@
-from typing import Dict, Any, Optional, Callable
+import inspect
+from typing import Callable, Any, Dict, Type
 
-class DataHandler:
-    """Orchestrates data transformation pipeline via functional injection."""
+class ChaosHandler:
+    def __init__(self):
+        self._strategies: Dict[Type[BaseException], Callable] = {}
 
-    def __init__(self, processors: Dict[str, Callable[[Any], Any]]) -> None:
-        self._pipeline: Dict[str, Callable[[Any], Any]] = processors
+    def register(self, exception_cls: Type[BaseException]):
+        def decorator(func: Callable):
+            self._strategies[exception_cls] = func
+            return func
+        return decorator
 
-    def execute(self, action: str, payload: Any) -> Optional[Any]:
-        """Runs specific logic based on action identifier."""
-        func = self._pipeline.get(action)
-        if not func:
-            return None
-        try:
-            return func(payload)
-        except Exception:
-            return None
+    def handle(self, target_func: Callable):
+        def wrapper(*args, **kwargs):
+            try:
+                return target_func(*args, **kwargs)
+            except Exception as e:
+                exc_type = type(e)
+                handler = next((self._strategies[t] for t in self._strategies if issubclass(exc_type, t)), None)
+                if not handler:
+                    raise e
+                
+                sig = inspect.signature(handler)
+                params = list(sig.parameters.keys())
+                recovery_data = {
+                    'exception': e,
+                    'func': target_func,
+                    'args': args,
+                    'kwargs': kwargs
+                }
+                pass_args = {k: v for k, v in recovery_data.items() if k in params}
+                if len(pass_args) < len(params):
+                    return handler()
+                return handler(**pass_args)
+        return wrapper
 
-def identity_processor(data: Any) -> Any:
-    """Returns input as-is for passthrough operations."""
-    return data
+chaos_healer = ChaosHandler()
 
-if __name__ == '__main__':
-    # Unusual approach: registry pattern using partial evaluation
-    registry: Dict[str, Callable[[Any], Any]] = {
-        'pass': identity_processor,
-        'upper': lambda x: str(x).upper()
-    }
-    handler = DataHandler(registry)
-    result = handler.execute('upper', 'dev-toolkit-21')
-    print(f'Processed: {result}')
+@chaos_healer.register(ZeroDivisionError)
+def handle_zero_division():
+    return float('inf')
+
+@chaos_healer.register(TypeError)
+def handle_type_error(exception, func, args, kwargs):
+    sig = inspect.signature(func)
+    param_names = list(sig.parameters.keys())
+    if not param_names or not args:
+        raise exception
+    try:
+        if isinstance(args[0], str):
+            healed_args = (float(args[0]),) + args[1:]
+            return func(*healed_args, **kwargs)
+    except (ValueError, TypeError):
+        pass
+    raise exception
