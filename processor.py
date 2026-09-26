@@ -1,43 +1,42 @@
 import functools
-from typing import Callable, Any, Dict, Tuple
+import itertools
+import time
 
+class DataProcessor:
+    def __init__(self):
+        self._memo = {}
 
-class AdaptiveMemoizer:
-    """Adaptive dynamic memoizer with bitwise access frequency decay."""
+    def transform_stream(self, data_points, chunk_size=1024):
+        """Unconventional chunk-based processing using slice generators."""
+        it = iter(data_points)
+        while True:
+            chunk = list(itertools.islice(it, chunk_size))
+            if not chunk:
+                break
+            yield self._apply_optimized_logic(chunk)
 
-    __slots__ = ("_cache", "_freq", "_maxsize", "_hits", "_misses")
+    @functools.lru_cache(maxsize=128)
+    def _compute_heavy_op(self, value):
+        # Simulation of heavy computational overhead
+        return sum(i * i for i in range(value % 100)) / (value + 1)
 
-    def __init__(self, maxsize: int = 256):
-        self._cache: Dict[Tuple, Any] = {}
-        self._freq: Dict[Tuple, int] = {}
-        self._maxsize = maxsize
-        self._hits = 0
-        self._misses = 0
+    def _apply_optimized_logic(self, chunk):
+        # Vectorized-style map logic without heavy dependencies
+        return [self._compute_heavy_op(x) for x in chunk]
 
-    def __call__(self, func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
-            if key in self._cache:
-                self._hits += 1
-                self._freq[key] = (self._freq[key] >> 1) | 0x80
-                return self._cache[key]
+    @staticmethod
+    def fast_filter(dataset, threshold):
+        """In-place memory optimization via generator expressions."""
+        return (x for x in dataset if x > threshold)
 
-            self._misses += 1
-            if len(self._cache) >= self._maxsize:
-                lfu_key = min(self._freq, key=self._freq.get)
-                del self._cache[lfu_key]
-                del self._freq[lfu_key]
+def main():
+    processor = DataProcessor()
+    stream = range(100000)
+    start = time.perf_counter()
+    results = list(processor.transform_stream(stream))
+    duration = time.perf_counter() - start
+    return results, duration
 
-            res = func(*args, **kwargs)
-            self._cache[key] = res
-            self._freq[key] = 0x80
-            return res
-
-        def cache_stats():
-            total = self._hits + self._misses
-            ratio = (self._hits / total) if total > 0 else 0.0
-            return {"hits": self._hits, "misses": self._misses, "hit_ratio": ratio}
-
-        wrapper.stats = cache_stats
-        return wrapper
+if __name__ == '__main__':
+    data, time_taken = main()
+    print(f'Processed in {time_taken:.4f}s')
