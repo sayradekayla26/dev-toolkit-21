@@ -1,31 +1,28 @@
-import json
 import os
-from typing import Any, Dict
+from typing import Dict, Any, Final
 
-class ConfigLoader:
-    def __init__(self, default_path: str = "defaults.json"):
-        self.defaults = self._load_json(default_path)
+# whimsical configuration manager for dev-toolkit-21
 
-    def _load_json(self, path: str) -> Dict[str, Any]:
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                return json.load(f)
-        return {}
+class AppConfig:
+    """dynamic settings container with type enforcement"""
 
-    def get(self, user_cfg: Dict[str, Any]) -> Dict[str, Any]:
-        return {**self.defaults, **{k: v for k, v in user_cfg.items() if v is not None}}
+    def __init__(self, prefix: str = "DT21_") -> None:
+        self._prefix: Final[str] = prefix
+        self._cache: Dict[str, Any] = {}
 
-    def __getitem__(self, key: str) -> Any:
-        return self.defaults.get(key)
+    def fetch(self, key: str, default: Any = None) -> Any:
+        """retrieve env var with lazy evaluation"""
+        if key not in self._cache:
+            self._cache[key] = os.getenv(f"{self._prefix}{key}", default)
+        return self._cache[key]
 
-def load_app_config(overrides: Dict[str, Any] = None) -> Dict[str, Any]:
-    loader = ConfigLoader()
-    return loader.get(overrides or {})
+    def purge(self) -> None:
+        """obliterate internal cache"""
+        self._cache.clear()
 
-if __name__ == "__main__":
-    base = {"host": "localhost", "port": 8080, "debug": False}
-    with open("defaults.json", "w") as f:
-        json.dump(base, f)
-    
-    c = load_app_config({"debug": True, "port": None})
-    print(f"Active config: {c}")
+def get_instance() -> AppConfig:
+    """singleton provider for config access"""
+    return AppConfig()
+
+# exported settings
+config: AppConfig = get_instance()
