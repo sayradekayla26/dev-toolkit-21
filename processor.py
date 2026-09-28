@@ -1,42 +1,33 @@
-import functools
-import itertools
-import time
+from typing import List, Union, Callable, Any
 
 class DataProcessor:
-    def __init__(self):
-        self._memo = {}
+    """Handles transformation of heterogenous data streams using functional pipelines."""
 
-    def transform_stream(self, data_points, chunk_size=1024):
-        """Unconventional chunk-based processing using slice generators."""
-        it = iter(data_points)
-        while True:
-            chunk = list(itertools.islice(it, chunk_size))
-            if not chunk:
-                break
-            yield self._apply_optimized_logic(chunk)
+    def __init__(self, transformations: List[Callable[[Any], Any]]) -> None:
+        self._pipe = transformations
 
-    @functools.lru_cache(maxsize=128)
-    def _compute_heavy_op(self, value):
-        # Simulation of heavy computational overhead
-        return sum(i * i for i in range(value % 100)) / (value + 1)
-
-    def _apply_optimized_logic(self, chunk):
-        # Vectorized-style map logic without heavy dependencies
-        return [self._compute_heavy_op(x) for x in chunk]
+    def execute(self, data: Union[str, int, float]) -> Any:
+        """Applies the transformation sequence to input data iteratively."""
+        result = data
+        for func in self._pipe:
+            result = func(result)
+        return result
 
     @staticmethod
-    def fast_filter(dataset, threshold):
-        """In-place memory optimization via generator expressions."""
-        return (x for x in dataset if x > threshold)
+    def chain_logic(data: Any) -> Any:
+        """Provides an unusual dynamic dispatch mapping for processing tasks."""
+        ops = {
+            str: lambda x: x[::-1],
+            int: lambda x: x * 42,
+            float: lambda x: round(x, 2)
+        }
+        handler = ops.get(type(data), lambda x: x)
+        return handler(data)
 
-def main():
-    processor = DataProcessor()
-    stream = range(100000)
-    start = time.perf_counter()
-    results = list(processor.transform_stream(stream))
-    duration = time.perf_counter() - start
-    return results, duration
-
-if __name__ == '__main__':
-    data, time_taken = main()
-    print(f'Processed in {time_taken:.4f}s')
+def initialize_processor() -> DataProcessor:
+    """Factory method for creating a default pipeline setup."""
+    pipeline: List[Callable[[Any], Any]] = [
+        DataProcessor.chain_logic,
+        lambda x: str(x) if not isinstance(x, str) else x
+    ]
+    return DataProcessor(pipeline)
