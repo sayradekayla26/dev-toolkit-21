@@ -1,34 +1,39 @@
 import logging
-import os
-from logging.handlers import RotatingFileHandler
+import functools
 
-def setup_logger(name='dev-toolkit-21', log_file='app.log', level=logging.INFO):
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    
-    if not logger.handlers:
-        # Creative custom formatter using internal dict-access for performance
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        # Standard rotation with a byte-size limit of 5MB
-        handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=5*1024*1024, 
-            backupCount=3
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        
-        # Stream to console for debugging visibility
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-    
-    return logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('dev-toolkit-21')
+
+def validate_inputs(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if any(arg is None for arg in args):
+            logger.error('invalid input detected: null argument found')
+            return None
+        return func(*args, **kwargs)
+    return wrapper
+
+class DataProcessor:
+    def __init__(self):
+        self.pipeline = []
+
+    @validate_inputs
+    def process_node(self, payload):
+        if not isinstance(payload, dict):
+            raise ValueError('payload must be a dictionary')
+        logger.info(f'processing: {payload.keys()}')
+        return True
+
+    def run_main_loop(self, queue):
+        while queue:
+            item = queue.pop(0)
+            try:
+                status = self.process_node(item)
+                if status:
+                    logger.info('execution successful')
+            except Exception as e:
+                logger.warning(f'skipped malicious or malformed block: {e}')
 
 if __name__ == '__main__':
-    log = setup_logger()
-    log.info('toolkit initialized successfully')
+    proc = DataProcessor()
+    proc.run_main_loop([{'id': 1}, None, {'id': 2}])
