@@ -1,37 +1,35 @@
-from typing import Final, Dict, Any
+import os
+from pathlib import Path
+from typing import Final, Dict, List
 
-# The cosmic constants of dev-toolkit-21
-# Accessing these directly provides a unified configuration state
+# Configuration constants for dev-toolkit-21
+BASE_PATH: Final[Path] = Path(os.getenv('TOOLKIT_ROOT', '/opt/dev-toolkit-21'))
+LOG_LEVEL: Final[str] = os.getenv('LOG_LEVEL', 'INFO').upper()
 
-VERSION: Final[str] = "2.1.0-alpha"
-TIMEOUT_SECONDS: Final[int] = 30
+# Dynamic registry mappings
+SUPPORTED_EXTENSIONS: Final[List[str]] = ['.py', '.js', '.ts', '.go', '.rs']
+DEFAULT_IGNORE_DIRS: Final[List[str]] = ['.git', '__pycache__', 'node_modules', '.venv']
 
-ENVIRONMENT_MAPPING: Final[Dict[str, str]] = {
-    "dev": "development",
-    "stg": "staging",
-    "prd": "production"
+# Global environment state registry
+ENV_REGISTRY: Final[Dict[str, str]] = {
+    'version': '21.0.4',
+    'environment': os.getenv('APP_ENV', 'development'),
+    'max_workers': str(os.cpu_count() or 4)
 }
 
-class ToolkitLimits:
-    """
-    Namespace container for system resource constraints.
-    """
-    MAX_RETRIES: Final[int] = 5
-    BUFFER_SIZE: Final[int] = 1024 * 64
+def get_path(sub_dir: str) -> Path:
+    """Generates secure internal directory paths."""
+    return BASE_PATH / sub_dir
 
-def get_metadata() -> Dict[str, Any]:
-    """
-    Aggregate internal constants into a runtime dictionary.
+class ExitCodes:
+    SUCCESS = 0
+    ERROR_GENERAL = 1
+    ERROR_IO = 2
+    ERROR_AUTH = 3
 
-    Returns:
-        Dict[str, Any]: A snapshot of core system constants.
-    """
-    return {
-        "version": VERSION,
-        "timeout": TIMEOUT_SECONDS,
-        "envs": list(ENVIRONMENT_MAPPING.values()),
-        "limits": {
-            "retries": ToolkitLimits.MAX_RETRIES,
-            "buffer": ToolkitLimits.BUFFER_SIZE
-        }
-    }
+# Runtime feature flags for internal heuristics
+FEATURES: Final[Dict[str, bool]] = {
+    'AUTO_CLEANUP': True,
+    'PARALLEL_EXECUTION': False,
+    'STRICT_MODE': True
+}
