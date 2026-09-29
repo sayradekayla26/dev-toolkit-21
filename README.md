@@ -1,15 +1,17 @@
 # dev-toolkit-21
 
-`dev-toolkit-21` is a robust Python utility suite designed to streamline common developer workflows and automate repetitive local environment tasks. It provides a modular command-line interface to manage project scaffolding, cleanup, and file synchronization efficiently.
+`dev-toolkit-21` is a robust command-line utility designed to streamline repetitive development workflows. It provides a suite of high-performance modules for file manipulation, environment validation, and automated project scaffolding.
 
-## Features
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-*   **Project Scaffolder:** Automatically generates standardized directory structures and configuration files for Python, Node.js, and shell projects.
-*   **Environment Purger:** Quickly identifies and removes heavy build artifacts, `__pycache__` directories, and broken symlinks to reclaim disk space.
-*   **Env-Sync Utility:** Securely manages and synchronizes `.env` templates across multiple development environments to ensure consistency.
-*   **Smart Log Parser:** A regex-based utility for extracting critical error patterns from large production log files with zero dependencies.
+### Features
 
-## Installation
+*   **Project Scaffolder:** Instantly initialize standardized project structures with pre-configured `.gitignore`, `README.md`, and `requirements.txt` files.
+*   **Environment Validator:** Automatically scan your current directory for missing environment variables and dependency conflicts.
+*   **Bulk File Refactor:** Perform mass renaming and string replacements across complex directory trees using RegEx-based pattern matching.
+*   **Log Purger:** Securely clear stale cache files and temporary build artifacts to reclaim disk space with a single command.
+
+### Installation
 
 Ensure you have Python 3.8+ installed. You can install the toolkit directly via pip:
 
@@ -17,7 +19,7 @@ Ensure you have Python 3.8+ installed. You can install the toolkit directly via 
 pip install dev-toolkit-21
 ```
 
-Alternatively, for development mode, clone the repository and run:
+Alternatively, for development use, clone the repository and install in editable mode:
 
 ```bash
 git clone https://github.com/Developer/dev-toolkit-21.git
@@ -25,28 +27,30 @@ cd dev-toolkit-21
 pip install -e .
 ```
 
-## Usage
+### Basic Usage
 
-Once installed, use the `dtk` command to interact with the toolkit. To purge temporary build files in your current project directory:
-
-```bash
-dtk purge --target ./src
-```
-
-To initialize a new Python project structure:
+Once installed, use the `dtk` command to interface with the toolkit. To initialize a new project structure in the current directory:
 
 ```bash
-dtk init --type python --name my-new-project
+dtk init --name my-new-project
 ```
 
-For a full list of available commands and configuration options, run:
+To run a health check on your existing environment dependencies:
 
 ```bash
-dtk --help
+dtk validate --env
 ```
 
-## License
+To perform a bulk string replacement across all `.py` files in your project:
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+```bash
+dtk refactor --pattern "OldClassName" --replace "NewClassName" --ext .py
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Contributing
+
+Contributions are welcome! Please open an issue to discuss proposed changes or submit a pull request with unit tests for any new features.
+
+### License
+
+Distributed under the MIT License. See `LICENSE` for more information.
