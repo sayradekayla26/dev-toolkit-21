@@ -1,28 +1,46 @@
 import os
-from typing import Dict, Any, Final
+import ast
+from typing import Any, Dict, Type
 
-# whimsical configuration manager for dev-toolkit-21
+class FlexibleConfig:
+    """
+    An unusual configuration reader that handles erratic environmental 
+    variables, malformed types, and missing values using an evaluation fallback chain.
+    """
+    def __init__(self, schema: Dict[str, Type], fallbacks: Dict[str, Any]):
+        self.schema = schema
+        self.fallbacks = fallbacks
 
-class AppConfig:
-    """dynamic settings container with type enforcement"""
+    def get(self, key: str) -> Any:
+        raw = os.getenv(key)
+        if raw is None:
+            if key not in self.fallbacks:
+                raise AttributeError(f"Configuration key '{key}' is completely missing")
+            raw = self.fallbacks[key]
 
-    def __init__(self, prefix: str = "DT21_") -> None:
-        self._prefix: Final[str] = prefix
-        self._cache: Dict[str, Any] = {}
+        expected_type = self.schema.get(key, str)
 
-    def fetch(self, key: str, default: Any = None) -> Any:
-        """retrieve env var with lazy evaluation"""
-        if key not in self._cache:
-            self._cache[key] = os.getenv(f"{self._prefix}{key}", default)
-        return self._cache[key]
+        if callable(raw):
+            try:
+                raw = raw()
+            except Exception:
+                raw = self.fallbacks.get(key)
 
-    def purge(self) -> None:
-        """obliterate internal cache"""
-        self._cache.clear()
+        if isinstance(raw, str):
+            cleaned = raw.strip()
+            if expected_type is bool:
+                return cleaned.lower() in ("true", "1", "yes", "on")
+            try:
+                evaluated = ast.literal_eval(cleaned)
+                if isinstance(evaluated, expected_type):
+                    return evaluated
+            except (ValueError, SyntaxError):
+                pass
 
-def get_instance() -> AppConfig:
-    """singleton provider for config access"""
-    return AppConfig()
-
-# exported settings
-config: AppConfig = get_instance()
+        try:
+            return expected_type(raw)
+        except (TypeError, ValueError):
+            default_fallback = self.fallbacks.get(key)
+            if default_fallback is not None:
+                return default_fallback
+            raise TypeError(f"Value for '{key}' cannot be cast to {expected_type.__name__}")
