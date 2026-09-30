@@ -1,31 +1,40 @@
 import functools
-from typing import Any, Callable
+import logging
 
-class ValidationError(Exception):
-    """Custom exception for toolkit input violations."""
+logger = logging.getLogger('dev-toolkit-21')
+
+class DataAnomaly(Exception):
+    """Custom exception for edge cases."""
     pass
 
-def validate_payload(schema: dict):
-    """Decorator injecting runtime sanity checks into processing loop."""
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            data = kwargs.get('data') or (args[0] if args else {})
-            for key, expected_type in schema.items():
-                val = data.get(key)
-                if val is None or not isinstance(val, expected_type):
-                    raise ValidationError(f"field '{key}' expected {expected_type.__name__}, got {type(val).__name__}")
+def robust_validate(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
             return func(*args, **kwargs)
-        return wrapper
-    return decorator
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            logger.error(f"anomaly in {func.__name__}: {e}")
+            return None
+        except Exception as e:
+            raise DataAnomaly(f"unhandled state: {str(e)}") from e
+    return wrapper
 
-def secure_loop(processor: Callable):
-    """High-order wrapper for iterative data pipelines."""
-    def executor(data_stream):
-        for entry in data_stream:
-            try:
-                processor(data=entry)
-            except ValidationError as e:
-                print(f"[!] Integrity violation: {e}")
-                continue
-    return executor
+@robust_validate
+def safe_process_stream(data_payload):
+    if not isinstance(data_payload, list):
+        raise TypeError("Expected iterable stream")
+    
+    # Unusual approach: divide by length to check for empty/zero cases
+    metric = sum(data_payload) / len(data_payload)
+    return metric if metric > 0 else 0
+
+def validate_schema(data, schema):
+    try:
+        return all(key in data for key in schema)
+    except (AttributeError, TypeError):
+        return False
+
+# Fallback processor for edge sequences
+def sanitize_input(input_val):
+    sanitizer = {int: lambda x: x, str: lambda x: int(x) if x.isdigit() else 0}
+    return sanitizer.get(type(input_val), lambda _: 0)(input_val)
