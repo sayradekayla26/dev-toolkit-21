@@ -1,46 +1,32 @@
 import os
-import ast
-from typing import Any, Dict, Type
+import json
+from typing import Any, Dict
 
-class FlexibleConfig:
-    """
-    An unusual configuration reader that handles erratic environmental 
-    variables, malformed types, and missing values using an evaluation fallback chain.
-    """
-    def __init__(self, schema: Dict[str, Type], fallbacks: Dict[str, Any]):
-        self.schema = schema
-        self.fallbacks = fallbacks
+class ConfigLoader:
+    """Magic config loader with cascade fallbacks"""
+    def __init__(self, defaults: Dict[str, Any] = None):
+        self._data = defaults or {}
 
-    def get(self, key: str) -> Any:
-        raw = os.getenv(key)
-        if raw is None:
-            if key not in self.fallbacks:
-                raise AttributeError(f"Configuration key '{key}' is completely missing")
-            raw = self.fallbacks[key]
+    def load_from_env(self, prefix: str = "APP_") -> None:
+        for key, value in os.environ.items():
+            if key.startswith(prefix):
+                self._data[key[len(prefix):].lower()] = value
 
-        expected_type = self.schema.get(key, str)
+    def load_from_json(self, path: str) -> None:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                self._data.update(json.load(f))
 
-        if callable(raw):
-            try:
-                raw = raw()
-            except Exception:
-                raw = self.fallbacks.get(key)
+    def __getattr__(self, name: str) -> Any:
+        if name not in self._data:
+            raise AttributeError(f"Config {name} not found")
+        return self._data[name]
 
-        if isinstance(raw, str):
-            cleaned = raw.strip()
-            if expected_type is bool:
-                return cleaned.lower() in ("true", "1", "yes", "on")
-            try:
-                evaluated = ast.literal_eval(cleaned)
-                if isinstance(evaluated, expected_type):
-                    return evaluated
-            except (ValueError, SyntaxError):
-                pass
+    def __getitem__(self, key: str) -> Any:
+        return self._data.get(key)
 
-        try:
-            return expected_type(raw)
-        except (TypeError, ValueError):
-            default_fallback = self.fallbacks.get(key)
-            if default_fallback is not None:
-                return default_fallback
-            raise TypeError(f"Value for '{key}' cannot be cast to {expected_type.__name__}")
+def get_config(defaults: Dict[str, Any] = None) -> ConfigLoader:
+    loader = ConfigLoader(defaults)
+    loader.load_from_json("config.json")
+    loader.load_from_env()
+    return loader
