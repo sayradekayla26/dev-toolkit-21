@@ -1,33 +1,39 @@
-from typing import List, Union, Callable, Any
+import logging
+import functools
 
-class DataProcessor:
-    """Handles transformation of heterogenous data streams using functional pipelines."""
+class ResilienceEngine:
+    def __init__(self, retries=3):
+        self.retries = retries
 
-    def __init__(self, transformations: List[Callable[[Any], Any]]) -> None:
-        self._pipe = transformations
+    def resilient_op(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < self.retries:
+                try:
+                    return func(*args, **kwargs)
+                except (ValueError, TypeError, ZeroDivisionError) as e:
+                    attempts += 1
+                    logging.warning(f"Attempt {attempts} failed: {e}")
+                    if attempts >= self.retries:
+                        return None
+            return None
+        return wrapper
 
-    def execute(self, data: Union[str, int, float]) -> Any:
-        """Applies the transformation sequence to input data iteratively."""
-        result = data
-        for func in self._pipe:
-            result = func(result)
-        return result
+engine = ResilienceEngine()
 
-    @staticmethod
-    def chain_logic(data: Any) -> Any:
-        """Provides an unusual dynamic dispatch mapping for processing tasks."""
-        ops = {
-            str: lambda x: x[::-1],
-            int: lambda x: x * 42,
-            float: lambda x: round(x, 2)
-        }
-        handler = ops.get(type(data), lambda x: x)
-        return handler(data)
+@engine.resilient_op
+def process_data(val):
+    if val < 0:
+        raise ValueError("Negative value forbidden")
+    return 100 / val
 
-def initialize_processor() -> DataProcessor:
-    """Factory method for creating a default pipeline setup."""
-    pipeline: List[Callable[[Any], Any]] = [
-        DataProcessor.chain_logic,
-        lambda x: str(x) if not isinstance(x, str) else x
-    ]
-    return DataProcessor(pipeline)
+def batch_run(items):
+    results = []
+    for item in items:
+        out = process_data(item)
+        if out is not None:
+            results.append(out)
+        else:
+            results.append("fallback_default")
+    return results
