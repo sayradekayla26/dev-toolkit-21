@@ -1,35 +1,44 @@
 import os
-from pathlib import Path
-from typing import Final, Dict, List
+from typing import Any, Dict, Final
 
-# Configuration constants for dev-toolkit-21
-BASE_PATH: Final[Path] = Path(os.getenv('TOOLKIT_ROOT', '/opt/dev-toolkit-21'))
-LOG_LEVEL: Final[str] = os.getenv('LOG_LEVEL', 'INFO').upper()
+class ConstantVault:
+    """A dynamically evaluated, environment-aware immutable constant registry.
 
-# Dynamic registry mappings
-SUPPORTED_EXTENSIONS: Final[List[str]] = ['.py', '.js', '.ts', '.go', '.rs']
-DEFAULT_IGNORE_DIRS: Final[List[str]] = ['.git', '__pycache__', 'node_modules', '.venv']
+    Provides typed access to default values, allowing overrides via environment
+    variables while guaranteeing absolute immutability once loaded.
+    """
 
-# Global environment state registry
-ENV_REGISTRY: Final[Dict[str, str]] = {
-    'version': '21.0.4',
-    'environment': os.getenv('APP_ENV', 'development'),
-    'max_workers': str(os.cpu_count() or 4)
-}
+    _lock: Final[set[str]] = set()
+    _values: Final[Dict[str, Any]] = {}
 
-def get_path(sub_dir: str) -> Path:
-    """Generates secure internal directory paths."""
-    return BASE_PATH / sub_dir
+    def __getattr__(self, name: str) -> Any:
+        """Retrieves a constant, checking environment overrides first.
 
-class ExitCodes:
-    SUCCESS = 0
-    ERROR_GENERAL = 1
-    ERROR_IO = 2
-    ERROR_AUTH = 3
+        Args:
+            name: The name of the constant to retrieve.
 
-# Runtime feature flags for internal heuristics
-FEATURES: Final[Dict[str, bool]] = {
-    'AUTO_CLEANUP': True,
-    'PARALLEL_EXECUTION': False,
-    'STRICT_MODE': True
-}
+        Returns:
+            Any: The constant value, typed appropriately.
+        """
+        if name not in self._values:
+            raise AttributeError(f"Constant '{name}' is not defined in the vault.")
+        env_val = os.getenv(f"DEV_TOOLKIT_{name}")
+        if env_val is not None:
+            default_type = type(self._values[name])
+            try:
+                return default_type(env_val)
+            except (ValueError, TypeError):
+                return env_val
+        return self._values[name]
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Prevents run-time mutation of existing constants."""
+        if name in self._lock or name in ("_lock", "_values"):
+            raise AttributeError("Attempting to mutate a sealed ConstantVault.")
+        self._values[name] = value
+        self._lock.add(name)
+
+env: Final[ConstantVault] = ConstantVault()
+env.DEFAULT_TIMEOUT = 15.0
+env.MAX_WORKERS = 4
+env.APP_STAGE = "development"
