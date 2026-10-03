@@ -1,71 +1,36 @@
-import time
-import re
-from functools import wraps
-from typing import Any, Callable, Dict, Iterable
+import os
+import shutil
+from pathlib import Path
+from typing import Union, List
 
+class WorkspaceCleaner:
+    def __init__(self, target_dir: Union[str, Path] = '.tmp'):
+        self.target = Path(target_dir)
 
-def safe_get(data: Any, path: str, default: Any = None) -> Any:
-    """Navigate nested dicts, lists, or objects using string path expression."""
-    tokens = re.findall(r'[^\.\[\]]+|\d+', path)
-    current = data
-    for token in tokens:
-        if current is None:
-            return default
-        if isinstance(current, dict):
-            current = current.get(token, default)
-        elif isinstance(current, (list, tuple)):
-            idx = int(token) if token.isdigit() else -1
-            if 0 <= idx < len(current):
-                current = current[idx]
-            else:
-                return default
-        elif hasattr(current, token):
-            current = getattr(current, token)
-        else:
-            return default
-    return current
+    def purge_recursive(self, patterns: List[str] = None) -> int:
+        count = 0
+        if not self.target.exists():
+            return count
+        
+        extensions = patterns or ['.log', '.tmp', '.bak']
+        for path in self.target.rglob('*'):
+            if path.suffix in extensions:
+                try:
+                    if path.is_file():
+                        path.unlink()
+                    elif path.is_dir():
+                        shutil.rmtree(path)
+                    count += 1
+                except OSError:
+                    pass
+        return count
 
+def organize_imports(code_block: str) -> str:
+    lines = code_block.splitlines()
+    imports = sorted([l for l in lines if l.startswith('import ') or l.startswith('from ')])
+    others = [l for l in lines if not (l.startswith('import ') or l.startswith('from '))]
+    return '\n'.join(imports + [''] + others).strip()
 
-def timed_cache(ttl_seconds: float = 60.0):
-    """Decorator caching function returns with monotonic expiration clock."""
-    def decorator(func: Callable):
-        cache: Dict[tuple, tuple] = {}
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
-            now = time.monotonic()
-            if key in cache:
-                timestamp, result = cache[key]
-                if now - timestamp < ttl_seconds:
-                    return result
-            result = func(*args, **kwargs)
-            cache[key] = (now, result)
-            return result
-
-        wrapper.clear_cache = lambda: cache.clear()
-        return wrapper
-    return decorator
-
-
-def pipe(initial_value: Any, *funcs: Callable) -> Any:
-    """Thread a value sequentially through a chain of callable operations."""
-    result = initial_value
-    for fn in funcs:
-        result = fn(result)
-    return result
-
-
-def chunk_iterable(iterable: Iterable, chunk_size: int):
-    """Lazy chunk generator for arbitrary iterable sequences."""
-    iterator = iter(iterable)
-    while True:
-        chunk = []
-        for _ in range(chunk_size):
-            try:
-                chunk.append(next(iterator))
-            except StopIteration:
-                break
-        if not chunk:
-            break
-        yield chunk
+def format_path_structure(base_path: str) -> dict:
+    tree = {path.name: path.is_dir() for path in Path(base_path).iterdir()}
+    return dict(sorted(tree.items(), key=lambda item: item[1]))
