@@ -3,30 +3,34 @@ import json
 from typing import Any, Dict
 
 class ConfigLoader:
-    """Magic config loader with cascade fallbacks"""
     def __init__(self, defaults: Dict[str, Any] = None):
         self._data = defaults or {}
 
-    def load_from_env(self, prefix: str = "APP_") -> None:
-        for key, value in os.environ.items():
-            if key.startswith(prefix):
-                self._data[key[len(prefix):].lower()] = value
+    def load(self, filepath: str) -> None:
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
+                file_data = json.load(f)
+                self._recursive_update(self._data, file_data)
 
-    def load_from_json(self, path: str) -> None:
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                self._data.update(json.load(f))
+    def _recursive_update(self, target: Dict, source: Dict) -> None:
+        for key, value in source.items():
+            if isinstance(value, dict) and key in target and isinstance(target[key], dict):
+                self._recursive_update(target[key], value)
+            else:
+                target[key] = value
+
+    def get(self, key_path: str, default: Any = None) -> Any:
+        keys = key_path.split('.')
+        val = self._data
+        try:
+            for k in keys:
+                val = val[k]
+            return val
+        except (KeyError, TypeError):
+            return default
 
     def __getattr__(self, name: str) -> Any:
-        if name not in self._data:
-            raise AttributeError(f"Config {name} not found")
-        return self._data[name]
+        return self._data.get(name)
 
-    def __getitem__(self, key: str) -> Any:
-        return self._data.get(key)
-
-def get_config(defaults: Dict[str, Any] = None) -> ConfigLoader:
-    loader = ConfigLoader(defaults)
-    loader.load_from_json("config.json")
-    loader.load_from_env()
-    return loader
+def get_config(defaults: Dict = None) -> ConfigLoader:
+    return ConfigLoader(defaults or {})
