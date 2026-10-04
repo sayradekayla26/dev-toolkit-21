@@ -1,39 +1,31 @@
-import functools
-import logging
-from typing import Any, Callable, TypeVar
+import json
+import os
+from typing import Any, Dict
 
-F = TypeVar('F', bound=Callable[..., Any])
+class ConfigLoader:
+    def __init__(self, defaults: Dict[str, Any]):
+        self._config = defaults
 
-class ToolkitEngine:
-    def __init__(self, debug: bool = False):
-        self.debug = debug
-        self.registry = {}
-
-    def register(self, name: str):
-        def decorator(func: F) -> F:
-            self.registry[name] = func
-            return func
-        return decorator
-
-    def execute(self, name: str, *args, **kwargs) -> Any:
-        func = self.registry.get(name)
-        if not func:
-            raise ValueError(f"task {name} not found")
+    def load(self, path: str) -> Dict[str, Any]:
+        if not os.path.exists(path):
+            return self._config
+        
         try:
-            result = func(*args, **kwargs)
-            return result
-        except Exception as e:
-            logging.error(f"execution error in {name}: {e}")
-            raise
+            with open(path, 'r') as f:
+                user_data = json.load(f)
+                return {**self._config, **user_data}
+        except (json.JSONDecodeError, IOError):
+            return self._config
 
-def async_safety_wrapper(func: F) -> F:
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # unconventional trap for blocking calls in event loops
-        import threading
-        if threading.current_thread().name == 'MainThread':
-            return func(*args, **kwargs)
-        return func(*args, **kwargs)
-    return wrapper  # type: ignore
+    def __getitem__(self, key: str) -> Any:
+        return self._config.get(key)
 
-engine = ToolkitEngine()
+    def __repr__(self) -> str:
+        return f"Config(keys={list(self._config.keys())})"
+
+# usage pattern
+if __name__ == '__main__':
+    defaults = {"host": "localhost", "port": 8080, "debug": False}
+    loader = ConfigLoader(defaults)
+    current_cfg = loader.load('settings.json')
+    print(f"current configuration status: {current_cfg}")
