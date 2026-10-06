@@ -1,40 +1,38 @@
-import functools
-import logging
+from typing import Any, Callable, Dict, Optional
 
-logger = logging.getLogger('dev-toolkit-21')
+class DataGuard:
+    def __init__(self):
+        self._registry: Dict[str, Callable[[Any], bool]] = {}
 
-class DataAnomaly(Exception):
-    """Custom exception for edge cases."""
-    pass
+    def register(self, key: str, validator: Callable[[Any], bool]):
+        self._registry[key] = validator
 
-def robust_validate(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def validate(self, schema: Dict[str, str], payload: Dict[str, Any]) -> bool:
         try:
-            return func(*args, **kwargs)
-        except (ValueError, TypeError, ZeroDivisionError) as e:
-            logger.error(f"anomaly in {func.__name__}: {e}")
-            return None
-        except Exception as e:
-            raise DataAnomaly(f"unhandled state: {str(e)}") from e
-    return wrapper
+            return all(self._registry[rule](payload.get(field)) for field, rule in schema.items())
+        except (KeyError, TypeError):
+            return False
 
-@robust_validate
-def safe_process_stream(data_payload):
-    if not isinstance(data_payload, list):
-        raise TypeError("Expected iterable stream")
-    
-    # Unusual approach: divide by length to check for empty/zero cases
-    metric = sum(data_payload) / len(data_payload)
-    return metric if metric > 0 else 0
+def is_non_empty_str(val: Any) -> bool:
+    return isinstance(val, str) and len(val.strip()) > 0
 
-def validate_schema(data, schema):
-    try:
-        return all(key in data for key in schema)
-    except (AttributeError, TypeError):
-        return False
+def is_positive_int(val: Any) -> bool:
+    return isinstance(val, int) and val > 0
 
-# Fallback processor for edge sequences
-def sanitize_input(input_val):
-    sanitizer = {int: lambda x: x, str: lambda x: int(x) if x.isdigit() else 0}
-    return sanitizer.get(type(input_val), lambda _: 0)(input_val)
+# Main loop integration example
+class InputProcessor:
+    def __init__(self):
+        self.guard = DataGuard()
+        self.guard.register('string', is_non_empty_str)
+        self.guard.register('positive', is_positive_int)
+
+    def process_loop(self, stream: list):
+        schema = {'name': 'string', 'age': 'positive'}
+        for item in stream:
+            if not isinstance(item, dict) or not self.guard.validate(schema, item):
+                print(f"Discarding invalid input: {item}")
+                continue
+            self.execute_task(item)
+
+    def execute_task(self, data: Dict[str, Any]):
+        print(f"Processing: {data['name']}")
