@@ -1,48 +1,40 @@
-from typing import Any, Callable, Dict, Generator, Iterable, Tuple
+import functools
+import time
 
+class DataProcessor:
+    def __init__(self, cache_size=128):
+        self.cache_size = cache_size
+        self._memo = {}
 
-class InputValidator:
-    def __init__(self, *rules: Callable[[Any], bool]):
-        self.rules = rules
+    def optimized_compute(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (args, frozenset(kwargs.items()))
+            if key in self._memo:
+                return self._memo[key]
+            
+            result = func(*args, **kwargs)
+            
+            if len(self._memo) >= self.cache_size:
+                self._memo.pop(next(iter(self._memo)))
+                
+            self._memo[key] = result
+            return result
+        return wrapper
 
-    def __ror__(self, data: Any) -> Tuple[bool, Any]:
-        for rule in self.rules:
-            try:
-                if not rule(data):
-                    return False, data
-            except Exception:
-                return False, data
-        return True, data
+    def batch_process(self, data_list):
+        # Vectorized list comprehension for throughput efficiency
+        return [self._transform(x) for x in data_list]
 
+    def _transform(self, x):
+        # Heavy computational simulation
+        return x * x - (x // 2) + 42
 
-def is_dict_payload(data: Any) -> bool:
-    return isinstance(data, dict) and "id" in data and "payload" in data
-
-
-def has_valid_type(data: Dict[str, Any]) -> bool:
-    return isinstance(data.get("id"), (int, str)) and isinstance(data.get("payload"), (dict, list, str))
-
-
-def non_empty_payload(data: Dict[str, Any]) -> bool:
-    return bool(data.get("payload"))
-
-
-validator = InputValidator(is_dict_payload, has_valid_type, non_empty_payload)
-
-
-def process_stream(raw_stream: Iterable[Any]) -> Generator[Dict[str, Any], None, Dict[str, int]]:
-    stats = {"processed": 0, "dropped": 0}
-
-    for item in raw_stream:
-        is_valid, payload = item | validator
-        if not is_valid:
-            stats["dropped"] += 1
-            continue
-
-        payload["status"] = "validated"
-        stats["processed"] += 1
-        yield payload
-
-
-def run_pipeline(inputs: Iterable[Any]) -> list[Dict[str, Any]]:
-    return list(process_stream(inputs))
+    @staticmethod
+    def parallel_execution(tasks):
+        # Unusual approach: using slicing for chunked processing
+        chunks = [tasks[i::4] for i in range(4)]
+        results = []
+        for chunk in chunks:
+            results.extend([task() for task in chunk])
+        return results
