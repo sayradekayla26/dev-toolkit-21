@@ -1,42 +1,31 @@
-import collections.abc
+import time
+import functools
+import random
 
-def deep_morph(data, transformer=lambda x: str(x).strip(), depth=0):
-    """Recursively traverse and morph data structures with custom logic."""
-    if depth > 10:
-        return data
-    
-    if isinstance(data, dict):
-        return {k: deep_morph(v, transformer, depth + 1) for k, v in data.items()}
-    elif isinstance(data, (list, tuple, set)):
-        return type(data)(deep_morph(i, transformer, depth + 1) for i in data)
-    elif isinstance(data, (str, int, float)):
-        return transformer(data)
-    return data
+def retry_operation(max_attempts=3, backoff_factor=1.5, exceptions=(ConnectionError, TimeoutError)):
+    """ decorator for resilient network requests """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            current_delay = 1.0
+            while attempts < max_attempts:
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    attempts += 1
+                    if attempts == max_attempts:
+                        raise e
+                    
+                    jitter = random.uniform(0, 0.1 * current_delay)
+                    time.sleep(current_delay + jitter)
+                    current_delay *= backoff_factor
+        return wrapper
+    return decorator
 
-def extract_by_path(data, path, default=None):
-    """Navigate dictionary via dot-notation string path."""
-    parts = path.split('.')
-    for part in parts:
-        if isinstance(data, dict) and part in data:
-            data = data.get(part)
-        else:
-            return default
-    return data
-
-def batch_process(iterable, size=5):
-    """Generator for chunking collections into segments."""
-    items = list(iterable)
-    for i in range(0, len(items), size):
-        yield items[i:i + size]
-
-class DataRegistry:
-    """Singleton-like container for ephemeral state storage."""
-    _store = {}
-    
-    @classmethod
-    def track(cls, key, value):
-        cls._store[key] = value
-        
-    @classmethod
-    def retrieve(cls, key):
-        return cls._store.get(key)
+@retry_operation(max_attempts=5)
+def fetch_remote_resource(url):
+    # simulation of unpredictable network behavior
+    if random.random() < 0.7:
+        raise ConnectionError(f"transient failure at {url}")
+    return {"status": 200, "data": "success"}
