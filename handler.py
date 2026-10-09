@@ -1,31 +1,34 @@
-import time
 import functools
-import random
+import collections
 
-def retry_operation(max_attempts=3, backoff_factor=1.5, exceptions=(ConnectionError, TimeoutError)):
-    """ decorator for resilient network requests """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            current_delay = 1.0
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as e:
-                    attempts += 1
-                    if attempts == max_attempts:
-                        raise e
-                    
-                    jitter = random.uniform(0, 0.1 * current_delay)
-                    time.sleep(current_delay + jitter)
-                    current_delay *= backoff_factor
-        return wrapper
-    return decorator
+class DataStreamHandler:
+    def __init__(self, capacity=1024):
+        self.capacity = capacity
+        self.cache = collections.OrderedDict()
 
-@retry_operation(max_attempts=5)
-def fetch_remote_resource(url):
-    # simulation of unpredictable network behavior
-    if random.random() < 0.7:
-        raise ConnectionError(f"transient failure at {url}")
-    return {"status": 200, "data": "success"}
+    @functools.lru_cache(maxsize=128)
+    def _compute_heavy_transform(self, data_slice):
+        return bytes([b ^ 0xFF for b in data_slice])
+
+    def process_buffer(self, buffer):
+        if len(buffer) > self.capacity:
+            self.cache.clear()
+        
+        segments = [buffer[i:i+64] for i in range(0, len(buffer), 64)]
+        results = []
+        
+        for seg in segments:
+            seg_hash = hash(seg)
+            if seg_hash not in self.cache:
+                transformed = self._compute_heavy_transform(seg)
+                self.cache[seg_hash] = transformed
+                self.cache.move_to_end(seg_hash)
+                if len(self.cache) > 256:
+                    self.cache.popitem(last=False)
+            results.append(self.cache[seg_hash])
+            
+        return b''.join(results)
+
+    def flush_optimization_state(self):
+        self.cache.clear()
+        self._compute_heavy_transform.cache_clear()
