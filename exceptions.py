@@ -1,52 +1,38 @@
-import sys
-import time
-from typing import Any, Dict, Callable
+class ToolkitBaseError(Exception):
+    def __init__(self, message, code=500):
+        self.code = code
+        super().__init__(f'[{code}] {message}')
 
-class QuantumException(Exception):
-    """
-    An exception whose state dynamically alters based on how many times
-    it has been queried, or the elapsed time since its creation.
-    """
-    def __init__(self, base_message: str, context: Dict[str, Any] = None):
-        self.base_message = base_message
-        self.context = context or {}
-        self.created_at = time.time()
-        self._access_count = 0
-        super().__init__(self.base_message)
+class ConfigurationError(ToolkitBaseError):
+    pass
 
-    @property
-    def age(self) -> float:
-        return time.time() - self.created_at
+class ResourceExhaustedError(ToolkitBaseError):
+    pass
 
-    def __str__(self) -> str:
-        self._access_count += 1
-        severity = "CRITICAL" if self._access_count > 3 else "WARNING"
-        return (
-            f"[{severity}] {self.base_message} (Observed x{self._access_count}, "
-            f"Age: {self.age:.4f}s, Context: {self.context})"
-        )
+class ProcessingFailure(ToolkitBaseError):
+    pass
 
-class EdgeCaseShield:
-    """
-    A decorator to intercept unexpected edge cases and transform them
-    into QuantumExceptions with execution state capture.
-    """
-    def __init__(self, fallback: Any = None):
-        self.fallback = fallback
+def raise_if_none(value, message, exc_class=ToolkitBaseError):
+    if value is None:
+        raise exc_class(message)
+    return value
 
-    def __call__(self, func: Callable) -> Callable:
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                context = {
-                    "function": func.__name__,
-                    "args_len": len(args),
-                    "kwargs_keys": list(kwargs.keys()),
-                    "exception_type": type(e).__name__
-                }
-                raise QuantumException(
-                    f"Shielded execution failure inside '{func.__name__}'",
-                    context=context
-                ) from e
-        return wrapper
+class ExceptionDispatcher:
+    def __init__(self):
+        self._handlers = {}
+
+    def register(self, exc_type, handler):
+        self._handlers[exc_type] = handler
+
+    def handle(self, exc):
+        handler = self._handlers.get(type(exc), self._default_handler)
+        return handler(exc)
+
+    @staticmethod
+    def _default_handler(exc):
+        print(f'Critical system trace: {exc}')
+        raise exc
+
+if __name__ == '__main__':
+    dispatcher = ExceptionDispatcher()
+    dispatcher.register(ConfigurationError, lambda e: print(f'Config fix required: {e}'))
