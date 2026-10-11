@@ -1,38 +1,27 @@
-class ToolkitBaseError(Exception):
-    def __init__(self, message, code=500):
-        self.code = code
-        super().__init__(f'[{code}] {message}')
+from typing import Optional, Any
 
-class ConfigurationError(ToolkitBaseError):
+class ToolkitError(Exception):
+    """Base exception for dev-toolkit-21 operations."""
+    def __init__(self, message: str, context: Optional[dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.context = context or {}
+
+class ConfigurationError(ToolkitError):
+    """Raised when config validation fails unexpectedly."""
     pass
 
-class ResourceExhaustedError(ToolkitBaseError):
-    pass
+class ProcessingError(ToolkitError):
+    """Custom error for data pipeline failures."""
+    def __str__(self) -> str:
+        base = super().__str__()
+        return f"{base} | context: {self.context}"
 
-class ProcessingFailure(ToolkitBaseError):
-    pass
-
-def raise_if_none(value, message, exc_class=ToolkitBaseError):
+def raise_if_none(value: Any, name: str) -> None:
+    """Enforce strict non-null values for internal state."""
     if value is None:
-        raise exc_class(message)
-    return value
+        raise ToolkitError(f"State component '{name}' cannot be null")
 
-class ExceptionDispatcher:
-    def __init__(self):
-        self._handlers = {}
-
-    def register(self, exc_type, handler):
-        self._handlers[exc_type] = handler
-
-    def handle(self, exc):
-        handler = self._handlers.get(type(exc), self._default_handler)
-        return handler(exc)
-
-    @staticmethod
-    def _default_handler(exc):
-        print(f'Critical system trace: {exc}')
-        raise exc
-
-if __name__ == '__main__':
-    dispatcher = ExceptionDispatcher()
-    dispatcher.register(ConfigurationError, lambda e: print(f'Config fix required: {e}'))
+class RegistryViolation(ToolkitError):
+    """Violation in the global toolkit component registry."""
+    def __init__(self, component_id: str) -> None:
+        super().__init__(f"Duplicate or invalid component: {component_id}")
