@@ -1,33 +1,44 @@
-import sys
-import traceback
-from typing import Any, Callable
+import functools
+import time
+from typing import Callable, Any, Dict
 
-def execute_with_resilience(func: Callable, *args, **kwargs) -> Any:
-    try:
-        return func(*args, **kwargs)
-    except KeyboardInterrupt:
-        sys.exit(130)
-    except Exception as e:
-        error_payload = {
-            "error_type": type(e).__name__,
-            "stack_trace": traceback.format_exc(),
-            "context": {"args": args, "kwargs": kwargs}
-        }
-        print(f"[dev-toolkit-21] recovery sequence initiated: {error_payload['error_type']}", file=sys.stderr)
-        return None
+class Memoizer:
+    def __init__(self, ttl: int = 60):
+        self.cache: Dict[tuple, tuple] = {}
+        self.ttl = ttl
 
-def safe_wrapper(func: Callable):
-    def decorator(*args, **kwargs):
-        result = execute_with_resilience(func, *args, **kwargs)
-        if result is None:
-            return []
-        return result
-    return decorator
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            key = (func.__name__, args, frozenset(kwargs.items()))
+            now = time.time()
+            if key in self.cache:
+                result, timestamp = self.cache[key]
+                if now - timestamp < self.ttl:
+                    return result
+            result = func(*args, **kwargs)
+            self.cache[key] = (result, now)
+            return result
+        return wrapper
 
-if __name__ == "__main__":
-    @safe_wrapper
-    def risky_operation(data):
-        return [1 / int(i) for i in data]
+def heavy_computation(x: int) -> int:
+    time.sleep(1)
+    return x * x
 
-    output = risky_operation(['1', '0', '2'])
-    print(f"processed data: {output}")
+@Memoizer(ttl=300)
+def cached_processor(data: int) -> int:
+    return heavy_computation(data)
+
+class PerformanceOptimizer:
+    def __init__(self, threshold: float = 0.05):
+        self.threshold = threshold
+
+    def optimize(self, func: Callable) -> Callable:
+        def decorated(*args: Any, **kwargs: Any) -> Any:
+            start = time.perf_counter()
+            res = func(*args, **kwargs)
+            duration = time.perf_counter() - start
+            if duration > self.threshold:
+                print(f'Warning: {func.__name__} took {duration:.4f}s')
+            return res
+        return decorated
