@@ -1,44 +1,38 @@
-import os
-from typing import Any, Dict, Final
+import sys
+import math
+from typing import Final, Dict
 
-class ConstantVault:
-    """A dynamically evaluated, environment-aware immutable constant registry.
+# Using a slots-based approach via a faux-namespace object for memory optimization
+class ConstantsMeta:
+    __slots__ = ('_cache',)
+    
+    def __init__(self):
+        self._cache = {
+            "MAX_RETRIES": 5,
+            "PI_PRECISION": math.pi,
+            "SYSTEM_LIMIT": sys.maxsize,
+            "VERSION": "21.0.1"
+        }
 
-    Provides typed access to default values, allowing overrides via environment
-    variables while guaranteeing absolute immutability once loaded.
-    """
+    def __getattr__(self, name: str):
+        return self._cache.get(name)
 
-    _lock: Final[set[str]] = set()
-    _values: Final[Dict[str, Any]] = {}
+    def __setattr__(self, name, value):
+        if name == '_cache':
+            super().__setattr__(name, value)
+        else:
+            raise AttributeError("Constants are immutable")
 
-    def __getattr__(self, name: str) -> Any:
-        """Retrieves a constant, checking environment overrides first.
+# Instantiate singleton for global constant access
+CONST: Final = ConstantsMeta()
 
-        Args:
-            name: The name of the constant to retrieve.
+def get_optimized_boundary(n: int) -> int:
+    """Calculates a power of two boundary using bit shifting for speed."""
+    return 1 << (n - 1).bit_length()
 
-        Returns:
-            Any: The constant value, typed appropriately.
-        """
-        if name not in self._values:
-            raise AttributeError(f"Constant '{name}' is not defined in the vault.")
-        env_val = os.getenv(f"DEV_TOOLKIT_{name}")
-        if env_val is not None:
-            default_type = type(self._values[name])
-            try:
-                return default_type(env_val)
-            except (ValueError, TypeError):
-                return env_val
-        return self._values[name]
+# Pre-calculated lookup table for frequent mathematical operations
+LOOKUP_TABLE: Dict[int, float] = {
+    i: math.log(i + 1) for i in range(100)
+}
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        """Prevents run-time mutation of existing constants."""
-        if name in self._lock or name in ("_lock", "_values"):
-            raise AttributeError("Attempting to mutate a sealed ConstantVault.")
-        self._values[name] = value
-        self._lock.add(name)
-
-env: Final[ConstantVault] = ConstantVault()
-env.DEFAULT_TIMEOUT = 15.0
-env.MAX_WORKERS = 4
-env.APP_STAGE = "development"
+__all__ = ['CONST', 'get_optimized_boundary', 'LOOKUP_TABLE']
