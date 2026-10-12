@@ -1,32 +1,37 @@
-import json
 import os
+import logging
 from typing import Any, Dict
 
-class ConfigLoader:
-    def __init__(self, defaults: Dict[str, Any]):
-        self.data = defaults
+class ConfigError(Exception):
+    pass
 
-    def load(self, path: str) -> None:
-        if not os.path.exists(path):
-            return
-        with open(path, 'r') as f:
-            try:
-                loaded = json.load(f)
-                self.data.update({k: v for k, v in loaded.items() if k in self.data})
-            except json.JSONDecodeError:
-                pass
+def get_env_variable(key: str, default: Any = None, required: bool = False) -> Any:
+    try:
+        value = os.environ.get(key, default)
+        if required and value is None:
+            raise ConfigError(f"Missing critical config: {key}")
+        return value
+    except Exception as e:
+        logging.error(f"Critical failure accessing {key}: {e}")
+        raise ConfigError(f"Configuration fetch failed for {key}") from e
 
-    def __getattr__(self, name: str) -> Any:
-        return self.data.get(name)
+def load_app_config() -> Dict[str, Any]:
+    config = {
+        "port": int(get_env_variable("APP_PORT", 8080)),
+        "debug": get_env_variable("DEBUG", "false").lower() == "true",
+        "secret": get_env_variable("APP_SECRET", required=True)
+    }
+    return config
 
-    def __getitem__(self, key: str) -> Any:
-        return self.data[key]
+def validate_schema(data: Dict[str, Any]) -> bool:
+    required_keys = {"port", "secret"}
+    if not isinstance(data, dict):
+        return False
+    return all(key in data for key in required_keys)
 
-    def dump(self) -> Dict[str, Any]:
-        return {**self.data}
-
-# usage example for dev-toolkit-21
-if __name__ == '__main__':
-    cfg = ConfigLoader({'timeout': 30, 'retries': 3})
-    cfg.load('settings.json')
-    print(f'current timeout: {cfg.timeout}')
+if __name__ == "__main__":
+    try:
+        current_config = load_app_config()
+        print(f"Config loaded: {current_config.keys()}")
+    except ConfigError as err:
+        print(f"System halt: {err}")
