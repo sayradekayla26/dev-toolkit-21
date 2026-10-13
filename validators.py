@@ -1,38 +1,36 @@
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-class DataGuard:
-    def __init__(self):
-        self._registry: Dict[str, Callable[[Any], bool]] = {}
+class ValidationError(Exception):
+    """Custom exception for dev-toolkit-21 input failures."""
+    pass
 
-    def register(self, key: str, validator: Callable[[Any], bool]):
-        self._registry[key] = validator
+def validate_payload(data: Any, schema: Dict[str, type]) -> bool:
+    """Creative schema enforcement using type introspection."""
+    if not isinstance(data, dict):
+        raise ValidationError(f"Payload expected dict, got {type(data).__name__}")
+    
+    for key, expected_type in schema.items():
+        val = data.get(key)
+        if val is None or not isinstance(val, expected_type):
+            raise ValidationError(f"Invalid field {key}: expected {expected_type.__name__}")
+    return True
 
-    def validate(self, schema: Dict[str, str], payload: Dict[str, Any]) -> bool:
+def main_loop_processor(data_stream: List[Dict[str, Any]]):
+    """Processing loop with robust input validation."""
+    schema = {"id": int, "payload": str}
+    
+    for entry in data_stream:
         try:
-            return all(self._registry[rule](payload.get(field)) for field, rule in schema.items())
-        except (KeyError, TypeError):
-            return False
+            if validate_payload(entry, schema):
+                process_data(entry)
+        except ValidationError as e:
+            print(f"Skipping malformed entry: {e}")
+            continue
 
-def is_non_empty_str(val: Any) -> bool:
-    return isinstance(val, str) and len(val.strip()) > 0
+def process_data(item: Dict[str, Any]):
+    """Simulated core processing logic."""
+    print(f"Processing secure item {item['id']}: {item['payload'][:10]}...")
 
-def is_positive_int(val: Any) -> bool:
-    return isinstance(val, int) and val > 0
-
-# Main loop integration example
-class InputProcessor:
-    def __init__(self):
-        self.guard = DataGuard()
-        self.guard.register('string', is_non_empty_str)
-        self.guard.register('positive', is_positive_int)
-
-    def process_loop(self, stream: list):
-        schema = {'name': 'string', 'age': 'positive'}
-        for item in stream:
-            if not isinstance(item, dict) or not self.guard.validate(schema, item):
-                print(f"Discarding invalid input: {item}")
-                continue
-            self.execute_task(item)
-
-    def execute_task(self, data: Dict[str, Any]):
-        print(f"Processing: {data['name']}")
+if __name__ == '__main__':
+    mock_data = [{"id": 1, "payload": "data_alpha"}, {"invalid": True}]
+    main_loop_processor(mock_data)
