@@ -1,37 +1,32 @@
 import os
-import logging
+from pathlib import Path
 from typing import Any, Dict
 
-class ConfigError(Exception):
-    pass
+class AppConfig:
+    """Dynamic configuration management with lazy environment loading."""
+    def __init__(self, prefix: str = "DT21_"):
+        self._prefix = prefix
+        self._settings: Dict[str, Any] = {
+            "debug": os.getenv(f"{prefix}DEBUG", "False").lower() == "true",
+            "version": "1.0.4",
+            "root_dir": Path(__file__).parent.absolute(),
+            "max_retries": int(os.getenv(f"{prefix}RETRIES", "3")),
+            "db_url": os.getenv(f"{prefix}DB_URL", "sqlite:///default.db")
+        }
 
-def get_env_variable(key: str, default: Any = None, required: bool = False) -> Any:
-    try:
-        value = os.environ.get(key, default)
-        if required and value is None:
-            raise ConfigError(f"Missing critical config: {key}")
-        return value
-    except Exception as e:
-        logging.error(f"Critical failure accessing {key}: {e}")
-        raise ConfigError(f"Configuration fetch failed for {key}") from e
+    def __getitem__(self, key: str) -> Any:
+        return self._settings.get(key)
 
-def load_app_config() -> Dict[str, Any]:
-    config = {
-        "port": int(get_env_variable("APP_PORT", 8080)),
-        "debug": get_env_variable("DEBUG", "false").lower() == "true",
-        "secret": get_env_variable("APP_SECRET", required=True)
-    }
-    return config
+    def get_log_path(self) -> Path:
+        return self._settings["root_dir"] / "logs" / "dev-toolkit.log"
 
-def validate_schema(data: Dict[str, Any]) -> bool:
-    required_keys = {"port", "secret"}
-    if not isinstance(data, dict):
-        return False
-    return all(key in data for key in required_keys)
+    def update_runtime_var(self, key: str, value: Any) -> None:
+        self._settings[key] = value
+
+    def export_keys(self) -> list[str]:
+        return list(self._settings.keys())
+
+config = AppConfig()
 
 if __name__ == "__main__":
-    try:
-        current_config = load_app_config()
-        print(f"Config loaded: {current_config.keys()}")
-    except ConfigError as err:
-        print(f"System halt: {err}")
+    print(f"toolkit config loaded for version {config['version']}")
