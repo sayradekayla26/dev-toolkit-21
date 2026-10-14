@@ -1,34 +1,42 @@
-import functools
-import collections
+import json
+from functools import wraps
+from typing import Any, Callable
 
-class DataStreamHandler:
-    def __init__(self, capacity=1024):
-        self.capacity = capacity
-        self.cache = collections.OrderedDict()
+def deep_flatten(lst: list) -> list:
+    flat = []
+    for item in lst:
+        if isinstance(item, list):
+            flat.extend(deep_flatten(item))
+        else:
+            flat.append(item)
+    return flat
 
-    @functools.lru_cache(maxsize=128)
-    def _compute_heavy_transform(self, data_slice):
-        return bytes([b ^ 0xFF for b in data_slice])
+def safe_json_load(data: str, fallback: Any = None) -> Any:
+    try:
+        return json.loads(data)
+    except (ValueError, TypeError):
+        return fallback
 
-    def process_buffer(self, buffer):
-        if len(buffer) > self.capacity:
-            self.cache.clear()
-        
-        segments = [buffer[i:i+64] for i in range(0, len(buffer), 64)]
-        results = []
-        
-        for seg in segments:
-            seg_hash = hash(seg)
-            if seg_hash not in self.cache:
-                transformed = self._compute_heavy_transform(seg)
-                self.cache[seg_hash] = transformed
-                self.cache.move_to_end(seg_hash)
-                if len(self.cache) > 256:
-                    self.cache.popitem(last=False)
-            results.append(self.cache[seg_hash])
-            
-        return b''.join(results)
+def time_execution(func: Callable) -> Callable:
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        import time
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+        print(f'[perf] {func.__name__} took {end - start:.4f}s')
+        return result
+    return wrapper
 
-    def flush_optimization_state(self):
-        self.cache.clear()
-        self._compute_heavy_transform.cache_clear()
+class DataPipeline:
+    def __init__(self, processors: list = None):
+        self.processors = processors or []
+
+    def run(self, initial_data: Any) -> Any:
+        result = initial_data
+        for p in self.processors:
+            result = p(result)
+        return result
+
+def compose(*funcs):
+    return lambda x: (lambda v, f: f(v))(x, funcs[-1]) if not funcs else compose(*funcs[:-1])(funcs[-1](x))
