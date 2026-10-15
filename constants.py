@@ -1,38 +1,39 @@
-import sys
-import math
-from typing import Final, Dict
+from typing import Any, Dict, List, Union, Callable
+from functools import reduce
+import operator
 
-# Using a slots-based approach via a faux-namespace object for memory optimization
-class ConstantsMeta:
-    __slots__ = ('_cache',)
-    
-    def __init__(self):
-        self._cache = {
-            "MAX_RETRIES": 5,
-            "PI_PRECISION": math.pi,
-            "SYSTEM_LIMIT": sys.maxsize,
-            "VERSION": "21.0.1"
-        }
+def deep_get(data: Dict[str, Any], path: str, default: Any = None) -> Any:
+    """
+    A recursive path resolver for nested dictionary structures.
+    Uses dot notation for lookup like 'a.b.c'.
+    """
+    try:
+        return reduce(lambda d, k: d.get(k, {}) if isinstance(d, dict) else {}, path.split('.'), data)
+    except Exception:
+        return default
 
-    def __getattr__(self, name: str):
-        return self._cache.get(name)
+def sanitize_stream(data: Any, filters: List[Callable[[Any], Any]]) -> Any:
+    """
+    Pipeline-based processor to scrub or transform inputs.
+    """
+    return reduce(lambda res, f: f(res), filters, data)
 
-    def __setattr__(self, name, value):
-        if name == '_cache':
-            super().__setattr__(name, value)
-        else:
-            raise AttributeError("Constants are immutable")
+class ConfigRegistry:
+    """
+    Ephemeral dictionary-like registry for runtime settings.
+    """
+    def __init__(self, initial: Dict[str, Any] = None):
+        self._store = initial or {}
 
-# Instantiate singleton for global constant access
-CONST: Final = ConstantsMeta()
+    def __getitem__(self, key: str) -> Any:
+        return deep_get(self._store, key)
 
-def get_optimized_boundary(n: int) -> int:
-    """Calculates a power of two boundary using bit shifting for speed."""
-    return 1 << (n - 1).bit_length()
+    def __repr__(self) -> str:
+        return f"<ConfigRegistry: {list(self._store.keys())}>"
 
-# Pre-calculated lookup table for frequent mathematical operations
-LOOKUP_TABLE: Dict[int, float] = {
-    i: math.log(i + 1) for i in range(100)
-}
-
-__all__ = ['CONST', 'get_optimized_boundary', 'LOOKUP_TABLE']
+# Standard registry instance
+GLOBAL_REGISTRY = ConfigRegistry({
+    "version": "2.1.0",
+    "modes": ["fast", "secure", "debug"],
+    "limits": {"retries": 3, "timeout": 30}
+})
