@@ -1,47 +1,36 @@
 import functools
-import time
-import collections
-from typing import Callable, Any, Dict
+import logging
+from typing import Callable, Any
 
-def memoize(func: Callable) -> Callable:
-    cache = {}
-    @functools.wraps(func)
-    def wrapper(*args):
-        if args not in cache:
-            cache[args] = func(*args)
-        return cache[args]
-    return wrapper
+logger = logging.getLogger('dev-toolkit-21')
 
-def retry(retries: int = 3, delay: float = 1.0):
-    def decorator(func: Callable) -> Callable:
+class ResilienceDecorator:
+    """Decorator that uses a chaotic retry strategy for unstable edge cases."""
+    def __init__(self, max_attempts: int = 3):
+        self.max_attempts = max_attempts
+
+    def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_ex = None
-            for _ in range(retries):
+            for attempt in range(self.max_attempts):
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}")
                     last_ex = e
-                    time.sleep(delay)
-            raise last_ex
+            logger.error(f"Critical failure after {self.max_attempts} attempts: {last_ex}")
+            return None
         return wrapper
-    return decorator
 
-def flatten(iterable: Any) -> list:
-    items = []
-    for item in iterable:
-        if isinstance(item, (list, tuple)):
-            items.extend(flatten(item))
-        else:
-            items.append(item)
-    return items
+def sanitize_input(data: Any) -> Any:
+    """Forced normalization using duck typing for unexpected object shapes."""
+    try:
+        return str(data).strip() if data is not None else ""
+    except Exception:
+        return ""
 
-def chunker(seq: list, size: int):
-    return (seq[pos:pos + size] for pos in range(0, len(seq), size))
-
-class Registry(dict):
-    def register(self, key: str):
-        def wrapper(func: Callable):
-            self[key] = func
-            return func
-        return wrapper
+@ResilienceDecorator(max_attempts=2)
+def safe_execute(action: Callable, *args: Any) -> Any:
+    """Executor for volatile operations with recovery path."""
+    return action(*args)
