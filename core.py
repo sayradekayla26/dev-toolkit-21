@@ -1,44 +1,28 @@
-import functools
 import time
-from typing import Callable, Any, Dict
+import functools
+import random
 
-class Memoizer:
-    def __init__(self, ttl: int = 60):
-        self.cache: Dict[tuple, tuple] = {}
-        self.ttl = ttl
-
-    def __call__(self, func: Callable) -> Callable:
+def retry_operation(max_attempts=3, base_delay=1.0):
+    """decorator for exponential backoff network retries"""
+    def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            key = (func.__name__, args, frozenset(kwargs.items()))
-            now = time.time()
-            if key in self.cache:
-                result, timestamp = self.cache[key]
-                if now - timestamp < self.ttl:
-                    return result
-            result = func(*args, **kwargs)
-            self.cache[key] = (result, now)
-            return result
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_attempts:
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    attempts += 1
+                    if attempts >= max_attempts:
+                        raise e
+                    sleep_time = (base_delay * (2 ** (attempts - 1))) + random.uniform(0, 0.1)
+                    time.sleep(sleep_time)
         return wrapper
+    return decorator
 
-def heavy_computation(x: int) -> int:
-    time.sleep(1)
-    return x * x
-
-@Memoizer(ttl=300)
-def cached_processor(data: int) -> int:
-    return heavy_computation(data)
-
-class PerformanceOptimizer:
-    def __init__(self, threshold: float = 0.05):
-        self.threshold = threshold
-
-    def optimize(self, func: Callable) -> Callable:
-        def decorated(*args: Any, **kwargs: Any) -> Any:
-            start = time.perf_counter()
-            res = func(*args, **kwargs)
-            duration = time.perf_counter() - start
-            if duration > self.threshold:
-                print(f'Warning: {func.__name__} took {duration:.4f}s')
-            return res
-        return decorated
+@retry_operation(max_attempts=3)
+def fetch_remote_resource(url):
+    # simulated network interaction logic
+    if random.random() < 0.7:
+        raise ConnectionError(f"failed to reach {url}")
+    return f"data from {url}"
