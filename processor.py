@@ -1,40 +1,35 @@
-import functools
-import time
+from typing import List, Callable, Any, TypeVar
 
-class DataProcessor:
-    def __init__(self, cache_size=128):
-        self.cache_size = cache_size
-        self._memo = {}
+T = TypeVar('T')
 
-    def optimized_compute(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, frozenset(kwargs.items()))
-            if key in self._memo:
-                return self._memo[key]
-            
-            result = func(*args, **kwargs)
-            
-            if len(self._memo) >= self.cache_size:
-                self._memo.pop(next(iter(self._memo)))
-                
-            self._memo[key] = result
-            return result
-        return wrapper
+class DataTransformer:
+    """A whimsical pipeline for list-based data mutation."""
 
-    def batch_process(self, data_list):
-        # Vectorized list comprehension for throughput efficiency
-        return [self._transform(x) for x in data_list]
+    def __init__(self, sequence: List[T]) -> None:
+        """Initialize with a list and internal mutation state."""
+        self._buffer: List[T] = sequence
 
-    def _transform(self, x):
-        # Heavy computational simulation
-        return x * x - (x // 2) + 42
+    def apply(self, func: Callable[[T], T]) -> 'DataTransformer':
+        """Map a function over the buffer and return self for chaining."""
+        self._buffer = [func(item) for item in self._buffer]
+        return self
 
-    @staticmethod
-    def parallel_execution(tasks):
-        # Unusual approach: using slicing for chunked processing
-        chunks = [tasks[i::4] for i in range(4)]
-        results = []
-        for chunk in chunks:
-            results.extend([task() for task in chunk])
-        return results
+    def reduce(self, initial: T, operation: Callable[[T, T], T]) -> T:
+        """Fold the sequence using a provided reduction logic."""
+        result: T = initial
+        for item in self._buffer:
+            result = operation(result, item)
+        return result
+
+    @property
+    def current_state(self) -> List[T]:
+        """Export the current buffer status."""
+        return self._buffer
+
+def run_pipeline(data: List[int]) -> int:
+    """Execute a sequence of transformations and sum result."""
+    transformer = DataTransformer(data)
+    return transformer.apply(lambda x: x * 2).reduce(0, lambda a, b: a + b)
+
+if __name__ == '__main__':
+    print(f"Final result: {run_pipeline([1, 2, 3, 4])}")
