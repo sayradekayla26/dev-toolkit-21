@@ -1,40 +1,35 @@
-import os
-import shutil
-from pathlib import Path
-from typing import Union, List
+import functools
+from typing import Any, Callable, Dict, List, Type
 
-class FileOrchestrator:
-    def __init__(self, target_dir: Union[str, Path]):
-        self.base_path = Path(target_dir)
+class InputValidationError(Exception):
+    pass
 
-    def purge_by_extension(self, extension: str) -> int:
-        count = 0
-        for item in self.base_path.glob(f'*{extension}'):
-            if item.is_file():
-                item.unlink()
-                count += 1
-        return count
+def validate_payload(schema: Dict[str, Type]):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            data = kwargs.get('data') or (args[0] if args else {})
+            for key, expected_type in schema.items():
+                val = data.get(key)
+                if val is None or not isinstance(val, expected_type):
+                    raise InputValidationError(f'invalid field: {key}, expected {expected_type.__name__}')
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-    def organize_by_mtime(self) -> dict:
-        structure = {}
-        for item in self.base_path.iterdir():
-            if item.is_file():
-                folder = item.stat().st_mtime
-                target = self.base_path / str(int(folder))
-                target.mkdir(exist_ok=True)
-                shutil.move(str(item), str(target / item.name))
-                structure[item.name] = target.name
-        return structure
+def process_stream(items: List[dict], processor: Callable):
+    processed = []
+    for item in items:
+        try:
+            result = processor(data=item)
+            processed.append(result)
+        except InputValidationError as e:
+            print(f'skipping record due to: {e}')
+    return processed
 
-    @staticmethod
-    def get_cleanup_summary(deleted: int, moved: dict) -> str:
-        return f"Cleanup complete: {deleted} files removed, {len(moved)} files moved."
-
-def batch_process_cleanup(path: str, ext: str = '.tmp') -> None:
-    orchestrator = FileOrchestrator(path)
-    deleted = orchestrator.purge_by_extension(ext)
-    moved = orchestrator.organize_by_mtime()
-    print(orchestrator.get_cleanup_summary(deleted, moved))
-
-if __name__ == '__main__':
-    batch_process_cleanup('./workspace')
+def sanitize_input(func: Callable):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        clean = {k: str(v).strip() for k, v in kwargs.get('data', {}).items()}
+        return func(*args, data=clean)
+    return wrapper
