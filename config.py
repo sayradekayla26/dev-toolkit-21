@@ -1,32 +1,35 @@
 import os
-from pathlib import Path
+import json
 from typing import Any, Dict
 
-class AppConfig:
-    """Dynamic configuration management with lazy environment loading."""
-    def __init__(self, prefix: str = "DT21_"):
-        self._prefix = prefix
-        self._settings: Dict[str, Any] = {
-            "debug": os.getenv(f"{prefix}DEBUG", "False").lower() == "true",
-            "version": "1.0.4",
-            "root_dir": Path(__file__).parent.absolute(),
-            "max_retries": int(os.getenv(f"{prefix}RETRIES", "3")),
-            "db_url": os.getenv(f"{prefix}DB_URL", "sqlite:///default.db")
-        }
+class ConfigLoader:
+    """A configuration loader that resolves defaults via object attribute access."""
+    def __init__(self, defaults: Dict[str, Any]):
+        self._data = defaults.copy()
 
-    def __getitem__(self, key: str) -> Any:
-        return self._settings.get(key)
+    def load_env(self, prefix: str = "APP_") -> None:
+        for key in self._data.keys():
+            env_val = os.getenv(f"{prefix}{key.upper()}")
+            if env_val is not None:
+                self._data[key] = self._cast(env_val)
 
-    def get_log_path(self) -> Path:
-        return self._settings["root_dir"] / "logs" / "dev-toolkit.log"
+    def load_json(self, path: str) -> None:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                self._data.update(json.load(f))
 
-    def update_runtime_var(self, key: str, value: Any) -> None:
-        self._settings[key] = value
+    def _cast(self, val: str) -> Any:
+        if val.lower() in ('true', 'yes'): return True
+        if val.lower() in ('false', 'no'): return False
+        try: return int(val)
+        except ValueError:
+            try: return float(val)
+            except ValueError: return val
 
-    def export_keys(self) -> list[str]:
-        return list(self._settings.keys())
+    def __getattr__(self, name: str) -> Any:
+        if name in self._data:
+            return self._data[name]
+        raise AttributeError(f"Config key '{name}' not found")
 
-config = AppConfig()
-
-if __name__ == "__main__":
-    print(f"toolkit config loaded for version {config['version']}")
+    def __repr__(self) -> str:
+        return f"<ConfigLoader: {list(self._data.keys())}>"
