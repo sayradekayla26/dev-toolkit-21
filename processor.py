@@ -1,35 +1,40 @@
-from typing import List, Callable, Any, TypeVar
+import collections
+import functools
+import itertools
 
-T = TypeVar('T')
+def deep_flatten(items):
+    """Recursively flatten nested iterables with a generator."""
+    for x in items:
+        if isinstance(x, collections.abc.Iterable) and not isinstance(x, (str, bytes)):
+            yield from deep_flatten(x)
+        else:
+            yield x
 
-class DataTransformer:
-    """A whimsical pipeline for list-based data mutation."""
+def memoize_with_expiry(ttl=60):
+    """Decorator for caching results with a simple timestamp check."""
+    def decorator(func):
+        cache = {}
+        @functools.wraps(func)
+        def wrapper(*args):
+            import time
+            now = time.time()
+            if args in cache and (now - cache[args]['time'] < ttl):
+                return cache[args]['val']
+            result = func(*args)
+            cache[args] = {'val': result, 'time': now}
+            return result
+        return wrapper
+    return decorator
 
-    def __init__(self, sequence: List[T]) -> None:
-        """Initialize with a list and internal mutation state."""
-        self._buffer: List[T] = sequence
+def batch_process(data, size):
+    """Partition data into chunks using itertools recipes."""
+    it = iter(data)
+    return iter(lambda: tuple(itertools.islice(it, size)), ())
 
-    def apply(self, func: Callable[[T], T]) -> 'DataTransformer':
-        """Map a function over the buffer and return self for chaining."""
-        self._buffer = [func(item) for item in self._buffer]
-        return self
-
-    def reduce(self, initial: T, operation: Callable[[T, T], T]) -> T:
-        """Fold the sequence using a provided reduction logic."""
-        result: T = initial
-        for item in self._buffer:
-            result = operation(result, item)
-        return result
-
-    @property
-    def current_state(self) -> List[T]:
-        """Export the current buffer status."""
-        return self._buffer
-
-def run_pipeline(data: List[int]) -> int:
-    """Execute a sequence of transformations and sum result."""
-    transformer = DataTransformer(data)
-    return transformer.apply(lambda x: x * 2).reduce(0, lambda a, b: a + b)
+def pipeline(data, *funcs):
+    """Functional pipe pattern execution over data."""
+    return functools.reduce(lambda d, f: f(d), funcs, data)
 
 if __name__ == '__main__':
-    print(f"Final result: {run_pipeline([1, 2, 3, 4])}")
+    data = [1, [2, 3], [[4], 5]]
+    print(list(deep_flatten(data)))
