@@ -1,46 +1,51 @@
 # dev-toolkit-21
 
-`dev-toolkit-21` is a robust collection of Python utilities designed to streamline common development workflows and environment automation. This toolkit reduces boilerplate by consolidating file management, system diagnostics, and API orchestration into a single, modular interface.
+`dev-toolkit-21` is a robust collection of Python utilities designed to streamline common development workflows and automate repetitive CLI tasks. It provides a lightweight, modular interface to handle system operations, file processing, and environment management with minimal overhead.
 
 ## Features
 
-*   **Environment Sync:** Effortlessly synchronize local `.env` variables across multiple project directories to maintain configuration consistency.
-*   **Log Auditor:** A high-performance log parsing engine that extracts actionable insights and error patterns from raw development logs.
-*   **System Profiler:** Real-time monitoring of local resource utilization, specifically tailored to identify memory leaks during Python script execution.
-*   **Dependency Auditor:** Quickly cross-reference installed packages against known vulnerability databases for automated security posture checks.
+*   **Project Scaffolding:** Quickly generate standardized directory structures and configuration files for new Python projects.
+*   **Log Auditor:** A structured logging wrapper that automatically rotates files and supports real-time filtering for debugging.
+*   **Environment Sync:** A CLI utility to validate `.env` files against local templates and ensure required variables are defined.
+*   **Resource Monitor:** Lightweight performance tracking for memory and CPU usage during long-running local scripts.
 
 ## Installation
 
-Ensure you have Python 3.9+ installed. Install the toolkit directly from the repository using pip:
+Ensure you have Python 3.9+ installed. You can install the toolkit via pip:
+
+```bash
+pip install dev-toolkit-21
+```
+
+To install from source for development:
 
 ```bash
 git clone https://github.com/Developer/dev-toolkit-21.git
 cd dev-toolkit-21
-pip install -r requirements.txt
+pip install -e .
 ```
 
-## Basic Usage
+## Usage
 
-The toolkit provides a command-line interface for executing tasks. To scan your current project directory for potential security vulnerabilities, run:
+After installation, you can access the toolkit via the `dtk` command-line interface.
 
+**Generating a new project structure:**
 ```bash
-python main.py audit --path ./my-project --level high
+dtk init --name my-new-app --template standard
 ```
 
-For a comprehensive diagnostic report of your system's current performance, use the profiler module:
-
+**Validating your environment variables:**
 ```bash
-python main.py profile --target cpu --duration 60
+dtk env-check --file .env --template .env.example
 ```
 
-To view all available commands and configuration options, execute:
-
+**Running a script with resource monitoring:**
 ```bash
-python main.py --help
+dtk monitor --command "python main.py"
 ```
 
 ## License
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
