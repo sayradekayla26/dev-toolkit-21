@@ -3,33 +3,32 @@ import json
 from typing import Any, Dict
 
 class ConfigLoader:
-    """A configuration loader that resolves defaults via object attribute access."""
-    def __init__(self, defaults: Dict[str, Any]):
+    def __init__(self, defaults: Dict[str, Any], env_prefix: str = 'APP_'):
         self._data = defaults.copy()
+        self._env_prefix = env_prefix
+        self._load_from_env()
 
-    def load_env(self, prefix: str = "APP_") -> None:
-        for key in self._data.keys():
-            env_val = os.getenv(f"{prefix}{key.upper()}")
+    def _load_from_env(self) -> None:
+        for key in self._data:
+            env_val = os.getenv(f"{self._env_prefix}{key.upper()}")
             if env_val is not None:
-                self._data[key] = self._cast(env_val)
+                try:
+                    self._data[key] = json.loads(env_val)
+                except (json.JSONDecodeError, TypeError):
+                    self._data[key] = env_val
 
-    def load_json(self, path: str) -> None:
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                self._data.update(json.load(f))
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
 
-    def _cast(self, val: str) -> Any:
-        if val.lower() in ('true', 'yes'): return True
-        if val.lower() in ('false', 'no'): return False
-        try: return int(val)
-        except ValueError:
-            try: return float(val)
-            except ValueError: return val
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
 
-    def __getattr__(self, name: str) -> Any:
-        if name in self._data:
-            return self._data[name]
-        raise AttributeError(f"Config key '{name}' not found")
-
-    def __repr__(self) -> str:
-        return f"<ConfigLoader: {list(self._data.keys())}>"
+    @classmethod
+    def from_json(cls, filepath: str, defaults: Dict[str, Any]) -> 'ConfigLoader':
+        instance = cls(defaults)
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
+                file_data = json.load(f)
+                instance._data.update(file_data)
+                instance._load_from_env()
+        return instance
