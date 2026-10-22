@@ -6,29 +6,32 @@ class ConfigLoader:
     def __init__(self, defaults: Dict[str, Any], env_prefix: str = 'APP_'):
         self._data = defaults.copy()
         self._env_prefix = env_prefix
-        self._load_from_env()
 
-    def _load_from_env(self) -> None:
-        for key in self._data:
-            env_val = os.getenv(f"{self._env_prefix}{key.upper()}")
-            if env_val is not None:
+    def load(self, filepath: str = 'config.json') -> 'ConfigLoader':
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
+                file_data = json.load(f)
+                self._data.update(file_data)
+        self._apply_env_overrides()
+        return self
+
+    def _apply_env_overrides(self):
+        for key in self._data.keys():
+            env_key = f"{self._env_prefix}{key.upper()}"
+            if env_key in os.environ:
+                val = os.environ[env_key]
                 try:
-                    self._data[key] = json.loads(env_val)
+                    self._data[key] = json.loads(val)
                 except (json.JSONDecodeError, TypeError):
-                    self._data[key] = env_val
-
-    def __getitem__(self, key: str) -> Any:
-        return self._data[key]
+                    self._data[key] = val
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 
-    @classmethod
-    def from_json(cls, filepath: str, defaults: Dict[str, Any]) -> 'ConfigLoader':
-        instance = cls(defaults)
-        if os.path.exists(filepath):
-            with open(filepath, 'r') as f:
-                file_data = json.load(f)
-                instance._data.update(file_data)
-                instance._load_from_env()
-        return instance
+    def __getattr__(self, name: str) -> Any:
+        if name in self._data:
+            return self._data[name]
+        raise AttributeError(f"Config has no attribute {name}")
+
+def get_config(defaults: Dict[str, Any]) -> ConfigLoader:
+    return ConfigLoader(defaults).load()
