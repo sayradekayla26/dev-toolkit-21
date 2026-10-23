@@ -1,39 +1,37 @@
 import logging
-import functools
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+import sys
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('dev-toolkit-21')
+def get_logger(name: str = 'dev-toolkit-21', path: str = 'logs/app.log') -> logging.Logger:
+    path_obj = Path(path)
+    path_obj.parent.mkdir(parents=True, exist_ok=True)
+    
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    formatter = logging.Formatter(
+        '[%(asctime)s] %(levelname)-8s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-def validate_inputs(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        if any(arg is None for arg in args):
-            logger.error('invalid input detected: null argument found')
-            return None
-        return func(*args, **kwargs)
-    return wrapper
+    # rotating file handler
+    file_handler = RotatingFileHandler(
+        path, 
+        maxBytes=1048576 * 5, 
+        backupCount=3, 
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # stream handler for console
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
 
-class DataProcessor:
-    def __init__(self):
-        self.pipeline = []
+    if not logger.handlers:
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+    
+    return logger
 
-    @validate_inputs
-    def process_node(self, payload):
-        if not isinstance(payload, dict):
-            raise ValueError('payload must be a dictionary')
-        logger.info(f'processing: {payload.keys()}')
-        return True
-
-    def run_main_loop(self, queue):
-        while queue:
-            item = queue.pop(0)
-            try:
-                status = self.process_node(item)
-                if status:
-                    logger.info('execution successful')
-            except Exception as e:
-                logger.warning(f'skipped malicious or malformed block: {e}')
-
-if __name__ == '__main__':
-    proc = DataProcessor()
-    proc.run_main_loop([{'id': 1}, None, {'id': 2}])
+log = get_logger()
