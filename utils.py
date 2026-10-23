@@ -1,33 +1,29 @@
-from typing import Any, Callable, Dict, List, Union
-from functools import reduce
-import operator
+import time
+import functools
+import random
+from typing import Callable, Any
 
-def deep_get(data: Dict[str, Any], path: str, default: Any = None) -> Any:
-    """Dynamic path traversal using dictionary keys."""
-    try:
-        return reduce(operator.getitem, path.split('.'), data)
-    except (KeyError, TypeError, AttributeError):
-        return default
+def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
+    """Decorator implementing jittered exponential backoff for resilience."""
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            x, attempt = 0, 0
+            while attempt <= retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == retries:
+                        raise e
+                    delay = (backoff_in_seconds * (2 ** attempt)) + (random.uniform(0, 1) * x)
+                    time.sleep(delay)
+                    attempt += 1
+                    x += 1
+            return None
+        return wrapper
+    return decorator
 
-def batch_process(items: List[Any], chunk_size: int = 10) -> List[List[Any]]:
-    """Generator-like slicing for memory efficiency."""
-    return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
-
-def sanitize_keys(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursive dictionary key normalization to snake_case."""
-    sanitized = {}
-    for k, v in data.items():
-        new_key = k.strip().lower().replace(' ', '_')
-        if isinstance(v, dict):
-            sanitized[new_key] = sanitize_keys(v)
-        elif isinstance(v, list):
-            sanitized[new_key] = [sanitize_keys(i) if isinstance(i, dict) else i for i in v]
-        else:
-            sanitized[new_key] = v
-    return sanitized
-
-def chain_ops(value: Any, ops: List[Callable]) -> Any:
-    """Functional application of transformation pipelines."""
-    for op in ops:
-        value = op(value)
-    return value
+@retry_with_backoff(retries=3)
+def execute_network_request(task_fn: Callable, *args: Any):
+    """Execution wrapper for unreliable network operations."""
+    return task_fn(*args)
