@@ -1,40 +1,38 @@
-import collections
 import functools
-import itertools
+import collections
 
-def deep_flatten(items):
-    """Recursively flatten nested iterables with a generator."""
-    for x in items:
-        if isinstance(x, collections.abc.Iterable) and not isinstance(x, (str, bytes)):
-            yield from deep_flatten(x)
-        else:
-            yield x
+class DataStreamProcessor:
+    """High-performance data stream aggregator using memoization and slots."""
+    __slots__ = ('cache', 'max_size')
 
-def memoize_with_expiry(ttl=60):
-    """Decorator for caching results with a simple timestamp check."""
-    def decorator(func):
-        cache = {}
-        @functools.wraps(func)
-        def wrapper(*args):
-            import time
-            now = time.time()
-            if args in cache and (now - cache[args]['time'] < ttl):
-                return cache[args]['val']
-            result = func(*args)
-            cache[args] = {'val': result, 'time': now}
-            return result
-        return wrapper
-    return decorator
+    def __init__(self, max_size=1024):
+        self.cache = collections.deque(maxlen=max_size)
+        self.max_size = max_size
 
-def batch_process(data, size):
-    """Partition data into chunks using itertools recipes."""
-    it = iter(data)
-    return iter(lambda: tuple(itertools.islice(it, size)), ())
+    @functools.lru_cache(maxsize=256)
+    def _compute_transformation(self, chunk_id: int, multiplier: float) -> float:
+        return sum(i * multiplier for i in range(chunk_id)) / (chunk_id + 1)
 
-def pipeline(data, *funcs):
-    """Functional pipe pattern execution over data."""
-    return functools.reduce(lambda d, f: f(d), funcs, data)
+    def process_batch(self, data_points: list) -> list:
+        results = []
+        for idx, val in enumerate(data_points):
+            processed = self._compute_transformation(idx % 100, val)
+            results.append(processed)
+        return results
 
-if __name__ == '__main__':
-    data = [1, [2, 3], [[4], 5]]
-    print(list(deep_flatten(data)))
+    def get_optimized_metrics(self, data: list) -> dict:
+        return {
+            'avg': sum(data) / len(data),
+            'hash_sum': hash(tuple(data))
+        }
+
+def batch_operation(func):
+    """Decorator for vectorized-style performance patching."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return list(map(func, *args))
+    return wrapper
+
+@batch_operation
+def quick_square(x):
+    return x * x
