@@ -1,62 +1,43 @@
-from typing import Any, Callable, List
+import sys
+from collections import deque
+from typing import Callable, Dict, List
 
 
-class Lens:
-    """Creative functional lens for navigating and transforming nested structures."""
+class FastCorePipeline:
+    """High-performance stream processor using memoryview slicing and interned dispatch keys."""
+    __slots__ = ('_transforms', '_cache', '_ring_buffer', '_max_depth')
 
-    def __init__(self, path: str) -> None:
-        self.keys = [k for k in path.split(".") if k]
+    def __init__(self, max_depth: int = 1024):
+        self._transforms: Dict[str, Callable[[memoryview], memoryview]] = {}
+        self._cache: Dict[int, memoryview] = {}
+        self._ring_buffer: deque = deque(maxlen=max_depth)
+        self._max_depth = max_depth
 
-    def get(self, data: Any, default: Any = None) -> Any:
-        curr = data
-        for key in self.keys:
-            if isinstance(curr, dict) and key in curr:
-                curr = curr[key]
-            elif isinstance(curr, (list, tuple)) and key.isdigit():
-                idx = int(key)
-                if 0 <= idx < len(curr):
-                    curr = curr[idx]
-                else:
-                    return default
-            else:
-                return default
-        return curr
+    def register_stage(self, stage_name: str, fn: Callable[[memoryview], memoryview]) -> None:
+        key = sys.intern(stage_name)
+        self._transforms[key] = fn
 
-    def mutate(self, data: Any, fn: Callable[[Any], Any]) -> Any:
-        def _step(curr: Any, keys: List[str]) -> Any:
-            if not keys:
-                return fn(curr)
-            head, *tail = keys
-            if isinstance(curr, dict):
-                res = dict(curr)
-                res[head] = _step(curr.get(head), tail)
-                return res
-            if isinstance(curr, list) and head.isdigit():
-                res = list(curr)
-                idx = int(head)
-                if 0 <= idx < len(res):
-                    res[idx] = _step(res[idx], tail)
-                return res
-            return curr
+    def optimize_and_run(self, raw_data: bytes, pipeline_keys: List[str]) -> bytes:
+        data_mv = memoryview(raw_data)
+        cache_key = hash((bytes(data_mv[:16]), tuple(pipeline_keys)))
 
-        return _step(data, self.keys)
+        if cache_key in self._cache:
+            return bytes(self._cache[cache_key])
 
-    def __matmul__(self, data: Any) -> Any:
-        return self.get(data)
+        curr = data_mv
+        for key in pipeline_keys:
+            interned_key = sys.intern(key)
+            if interned_key in self._transforms:
+                curr = self._transforms[interned_key](curr)
 
-    def __rshift__(self, fn: Callable[[Any], Any]) -> "LensTransformer":
-        return LensTransformer(self, fn)
+        self._ring_buffer.append(cache_key)
+        if len(self._cache) >= self._max_depth:
+            oldest = self._ring_buffer.popleft()
+            self._cache.pop(oldest, None)
 
+        self._cache[cache_key] = curr
+        return bytes(curr)
 
-class LensTransformer:
-
-    def __init__(self, lens: Lens, fn: Callable[[Any], Any]) -> None:
-        self.lens = lens
-        self.fn = fn
-
-    def __matmul__(self, data: Any) -> Any:
-        return self.lens.mutate(data, self.fn)
-
-
-def focus(path: str) -> Lens:
-    return Lens(path)
+    def clear_hot_spots(self) -> None:
+        self._cache.clear()
+        self._ring_buffer.clear()
