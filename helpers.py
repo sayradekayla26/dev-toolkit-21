@@ -1,35 +1,46 @@
 import functools
-from typing import Any, Callable, Dict, List, Type
+import collections
+from typing import Any, Callable, TypeVar, Iterable
 
-class InputValidationError(Exception):
-    pass
+T = TypeVar('T')
 
-def validate_payload(schema: Dict[str, Type]):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            data = kwargs.get('data') or (args[0] if args else {})
-            for key, expected_type in schema.items():
-                val = data.get(key)
-                if val is None or not isinstance(val, expected_type):
-                    raise InputValidationError(f'invalid field: {key}, expected {expected_type.__name__}')
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+class DataPipeline:
+    """A whimsical data processing chain wrapper."""
+    def __init__(self, data: Iterable[T]):
+        self._data = list(data)
 
-def process_stream(items: List[dict], processor: Callable):
-    processed = []
+    def transform(self, func: Callable[[T], Any]) -> 'DataPipeline':
+        self._data = [func(item) for item in self._data]
+        return self
+
+    def collect(self) -> list[Any]:
+        return self._data
+
+def deep_flatten(nested: Iterable) -> list:
+    """Recursively unpack nested structures using recursion."""
+    result = []
+    for item in nested:
+        if isinstance(item, (list, tuple, set)):
+            result.extend(deep_flatten(item))
+        else:
+            result.append(item)
+    return result
+
+def batch_process(items: Iterable[T], size: int = 10) -> Iterable[list[T]]:
+    """Yields non-overlapping chunks from a stream."""
+    chunk = []
     for item in items:
-        try:
-            result = processor(data=item)
-            processed.append(result)
-        except InputValidationError as e:
-            print(f'skipping record due to: {e}')
-    return processed
+        chunk.append(item)
+        if len(chunk) == size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk
 
-def sanitize_input(func: Callable):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        clean = {k: str(v).strip() for k, v in kwargs.get('data', {}).items()}
-        return func(*args, data=clean)
-    return wrapper
+def smart_dict_merge(*dicts: dict[Any, Any]) -> dict[Any, Any]:
+    """Merges dicts, concatenating values if keys collide."""
+    result = collections.defaultdict(list)
+    for d in dicts:
+        for k, v in d.items():
+            result[k].append(v)
+    return {k: v[0] if len(v) == 1 else v for k, v in result.items()}
