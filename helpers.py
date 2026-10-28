@@ -1,46 +1,39 @@
-import functools
-import collections
-from typing import Any, Callable, TypeVar, Iterable
+import os
+import shutil
+from pathlib import Path
+from typing import Union, List
 
-T = TypeVar('T')
+class FileOrchestrator:
+    def __init__(self, root: str = '.'):
+        self.root = Path(root)
 
-class DataPipeline:
-    """A whimsical data processing chain wrapper."""
-    def __init__(self, data: Iterable[T]):
-        self._data = list(data)
+    def purge_by_extension(self, ext: str) -> int:
+        count = 0
+        for path in self.root.rglob(f'*{ext}'):
+            if path.is_file():
+                path.unlink()
+                count += 1
+        return count
 
-    def transform(self, func: Callable[[T], Any]) -> 'DataPipeline':
-        self._data = [func(item) for item in self._data]
-        return self
+    def reorganize_files(self, mapping: dict) -> List[str]:
+        moved = []
+        for file_path in self.root.iterdir():
+            if file_path.is_file() and file_path.suffix in mapping:
+                target_dir = self.root / mapping[file_path.suffix]
+                target_dir.mkdir(exist_ok=True)
+                dest = target_dir / file_path.name
+                shutil.move(str(file_path), str(dest))
+                moved.append(str(dest))
+        return moved
 
-    def collect(self) -> list[Any]:
-        return self._data
+def clean_temp_workspace(path: Union[str, Path]) -> None:
+    target = Path(path)
+    if target.exists():
+        shutil.rmtree(target)
+        target.mkdir()
 
-def deep_flatten(nested: Iterable) -> list:
-    """Recursively unpack nested structures using recursion."""
-    result = []
-    for item in nested:
-        if isinstance(item, (list, tuple, set)):
-            result.extend(deep_flatten(item))
-        else:
-            result.append(item)
-    return result
-
-def batch_process(items: Iterable[T], size: int = 10) -> Iterable[list[T]]:
-    """Yields non-overlapping chunks from a stream."""
-    chunk = []
-    for item in items:
-        chunk.append(item)
-        if len(chunk) == size:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk
-
-def smart_dict_merge(*dicts: dict[Any, Any]) -> dict[Any, Any]:
-    """Merges dicts, concatenating values if keys collide."""
-    result = collections.defaultdict(list)
-    for d in dicts:
-        for k, v in d.items():
-            result[k].append(v)
-    return {k: v[0] if len(v) == 1 else v for k, v in result.items()}
+def get_directory_stats(path: str) -> dict:
+    return {
+        'files': sum(1 for f in Path(path).rglob('*') if f.is_file()),
+        'size_bytes': sum(f.stat().st_size for f in Path(path).rglob('*') if f.is_file())
+    }
