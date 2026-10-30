@@ -1,57 +1,47 @@
+import sys
 import time
-from typing import Any, Callable, Dict, List, Tuple
-
+from typing import Callable, Any, List, Dict, Tuple
 
 class OptimizedPipeline:
-    """High-throughput execution pipeline using compiled dispatcher slots."""
+    """A pipeline optimizer that synthesizes dynamic callables to eliminate function overhead."""
 
-    __slots__ = ("_stages", "_compiled_chain", "_hits", "_cache")
+    def __init__(self, steps: List[Callable[[Any], Any]]):
+        self.steps = steps
+        self._fast_runner = self._synthesize_chain(steps)
 
-    def __init__(self) -> None:
-        self._stages: List[Tuple[str, Callable[[Any], Any]]] = []
-        self._compiled_chain: Callable[[Any], Any] | None = None
-        self._hits: int = 0
-        self._cache: Dict[int, Any] = {}
-
-    def register(self, name: str) -> Callable:
-        def decorator(func: Callable[[Any], Any]) -> Callable:
-            self._stages.append((name, func))
-            self._compiled_chain = None
-            return func
-
-        return decorator
-
-    def _compile(self) -> Callable[[Any], Any]:
-        if not self._stages:
+    @staticmethod
+    def _synthesize_chain(steps: List[Callable[[Any], Any]]) -> Callable[[Any], Any]:
+        if not steps:
             return lambda x: x
 
-        chain: Callable[[Any], Any] = lambda x: x
-        for _, stage in reversed(self._stages):
-            prev = chain
-            chain = lambda val, f=stage, p=prev: p(f(val))
+        globals_dict: Dict[str, Any] = {}
+        code_lines = ["def _compiled_pipeline(val):"]
+        
+        for i, step in enumerate(steps):
+            fn_name = f"_fn_{i}"
+            globals_dict[fn_name] = step
+            code_lines.append(f"    val = {fn_name}(val)")
+        code_lines.append("    return val")
 
-        self._compiled_chain = chain
-        return chain
+        source = "\n".join(code_lines)
+        exec_scope: Dict[str, Any] = {}
+        exec(compile(source, filename="<dynamic_pipeline>", mode="exec"), globals_dict, exec_scope)
+        return exec_scope["_compiled_pipeline"]
 
-    def execute(self, data: Any, use_cache: bool = True) -> Any:
-        if use_cache:
-            key = hash(data) if isinstance(data, (int, str, bytes, tuple)) else id(data)
-            if key in self._cache:
-                self._hits += 1
-                return self._cache[key]
+    def execute(self, initial_value: Any) -> Any:
+        return self._fast_runner(initial_value)
 
-        chain = self._compiled_chain or self._compile()
-        result = chain(data)
+class CoreDispatcher:
+    """Core dispatcher managing dynamically optimized processing pipelines."""
 
-        if use_cache and len(self._cache) < 1024:
-            key = hash(data) if isinstance(data, (int, str, bytes, tuple)) else id(data)
-            self._cache[key] = result
+    def __init__(self):
+        self._cache: Dict[Tuple[int, ...], OptimizedPipeline] = {}
 
-        return result
+    def run_sequence(self, value: Any, steps: List[Callable[[Any], Any]]) -> Any:
+        key = tuple(id(s) for s in steps)
+        if key not in self._cache:
+            self._cache[key] = OptimizedPipeline(steps)
+        return self._cache[key].execute(value)
 
-    def benchmark(self, sample_data: List[Any]) -> Dict[str, float]:
-        start = time.perf_counter()
-        for item in sample_data:
-            self.execute(item, use_cache=True)
-        elapsed = time.perf_counter() - start
-        return {"total_time_sec": elapsed, "cache_hits": float(self._hits)}
+    def purge_cache(self) -> None:
+        self._cache.clear()
